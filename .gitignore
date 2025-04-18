@@ -1,0 +1,8 @@
+.DS_Store
+temp
+node_modules
+uploads
+data
+dist
+nodemon.json
+playground.js
