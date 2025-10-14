@@ -3,16 +3,16 @@ import fs from 'fs';
 
 import validator from 'validator';
 
-import { CtxArgs, ParentObjectData } from "../../types-def";
+import { CtxArgs, ParentObjectData } from "../../../models/type-def";
 import User, { UserData } from "../../../models/user";
-import { resolverErrorChecker, sendEmail, repairStatusEnum, orderEnums, allGenre, validatePriceFormat } from "../../../util/helper";
+import { resolverErrorChecker, repairStatusEnum, orderEnums, allGenre, validatePriceFormat } from "../../../util/helper";
 import { paths } from '../../../util/path-linker';
 import AdminKey from "../../../models/admin-keys";
 import { NewSlide, getSlidesFromFile } from "../../../models/slide";
 import { clearImage } from "../../../util/file-storage";
 import Product, { ProductData } from '../../../models/product';
-import Categories, { CategoryData } from '../../../models/categories';
-import { AdminParentObj } from './super-admin-resolver';
+import Categories, { CategoryData } from '../../../models/category';
+import { AdminParentObj } from './super-user-resolver';
 import Post from '../../../models/post';
 import mongoose, { HydratedDocument } from 'mongoose';
 import Order from '../../../models/order';
@@ -25,15 +25,17 @@ import GameRepair from '../../../models/game-repair';
 import Refund from '../../../models/refund';
 import GameSwap, { IGameSwap } from '../../../models/game-swap';
 import GameRent from '../../../models/game-rent';
+import { EventEmitter } from 'nodemailer/lib/xoauth2';
+import Mailing from '../../../models/mailing';
 
 
 
 
 export default {
     createProduct: async ({ adminQueryInput, prodId }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, userId, accType } = req;
+        const { isAuth, userId, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
         });
@@ -68,7 +70,7 @@ export default {
             code: 422
         });
 
-
+        // TODO: uncomment after testing!
         // if (desc) { 
         //     resolverErrorChecker({
         //         condition: validator.isEmpty(desc) || !validator.isLength(desc, { max: 300 }),
@@ -78,11 +80,10 @@ export default {
         // }
 
         resolverErrorChecker({
-            condition: 0 > price, message: 'Invalid price! Number must be positive', code: 422
+            condition: 0 > price, message: 'Invalid price! Number must be positive.', code: 422
         });
 
         var product: HydratedDocument<ProductData> | null;
-        // if prod already exist update product data
         if (!prodId) {
             product = new Product({
                 title: title,
@@ -95,6 +96,7 @@ export default {
                 stockQty: stockQty
             });
 
+            // if prodId already exist update product data
         } else {
             product = await Product.findById(prodId);
             resolverErrorChecker({ condition: !product, message: 'Product was not found :(', code: 404 });
@@ -109,31 +111,6 @@ export default {
 
         const savedProduct = await product!.save();
 
-        // const productCategoryData = { catTitle: category, subCatTitle: subcategory };
-        // call findOne ony when we are editing in order to reduce database calls
-        // var categories: HydratedDocument<CategoryData> | null;
-        // if (isCreated) {
-        //     categories = await Categories.findOne({ title: productCategoryData.catTitle });
-
-        // } else {
-        //     categories = null;
-        // }
-
-
-        // if (!categories && isCreated) {
-
-        //     let subcatData: Map<string, Types.ObjectId[]> = new Map([[productCategoryData.subCatTitle, [savedProduct._id]]]);
-        //     categories = await Categories.create({ title: productCategoryData.catTitle, subcategoryData: subcatData });
-
-        // } else if (categories && !categories.subcategoryData.has(savedProduct.subcategory)) {
-        //     categories.subcategoryData.set(productCategoryData.subCatTitle, [savedProduct._id]);
-        //     await categories.updateOne({ subcategoryData: categories.subcategoryData });
-
-        // } else if (categories && categories.subcategoryData.has(savedProduct.subcategory) && isUpdated === false) {
-        //     await categories.addToCategory(savedProduct);
-        // }
-
-        //    const categories = await Categories.findOne({ title: productCategoryData.catTitle });
         if (isUpdated === false) {
             await foundCategory!.addToCategory(savedProduct);
             foundCategory!.save();
@@ -143,7 +120,7 @@ export default {
     },
     deleteProduct: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
         resolverErrorChecker({
-            condition: !req.isAuth || !['admin', 'super_admin'].includes(req.accType),
+            condition: !req.isAuth || !['admin', 'superuser'].includes(req.role),
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
         });
@@ -180,10 +157,10 @@ export default {
         return { success: true, message: `Product: ${foundProduct.title} was successfully deleted.` };
     },
     createOrEditCategory: async ({ id, categoryTitle, subcategoryTitles }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :('
         });
@@ -225,10 +202,10 @@ export default {
         return { success: true, message: `Updated subcategories of ${category?.title}` };
     },
     addProductToCategory: async ({ id, categoryTitle, subcategoryTitle }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -266,10 +243,10 @@ export default {
         }
     },
     deleteCategory: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :('
         });
@@ -300,9 +277,9 @@ export default {
     },
 
     createSlide: async ({ adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, userId, accType, user } = req;
+        const { isAuth, userId, role, user } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
         });
@@ -365,7 +342,7 @@ export default {
 
     slides: async (parent: any, { req }: CtxArgs) => {
         resolverErrorChecker({
-            condition: !req.isAuth || !['admin', 'super_admin'].includes(req.accType),
+            condition: !req.isAuth || !['admin', 'superuser'].includes(req.role),
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
         });
@@ -401,19 +378,15 @@ export default {
     },
     getAdminUsers: async ({ }: AdminParentObj, { req }: CtxArgs) => {
         resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
-        resolverErrorChecker({ condition: !['admin', 'super_admin'].includes(req.accType), code: 403, message: 'Unauthorized request.' });
-        const foundAdmins: UserData[] = await User.find({ 'accInfo.accType': "admin" }).select('email username');
-
-        // const adminUsersArray = foundAdmins.map((adm: UserData) => {
-        //     return { id: adm.id, ...adm._doc };
-        // });
+        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        const foundAdmins: UserData[] = await User.find({ 'accInfo.role': "admin" }).select('email username');
 
 
         return foundAdmins;
     },
     getAdminUserInfo: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
         resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
-        resolverErrorChecker({ condition: !['admin', 'super_admin'].includes(req.accType), code: 403, message: 'Unauthorized request.' });
+        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
         const foundAdmin: UserData | null = await User.findById(id);
 
         if (!foundAdmin) {
@@ -434,15 +407,16 @@ export default {
             lastName: foundAdmin.lastName,
             username: foundAdmin.username,
             email: foundAdmin.email,
-            accType: foundAdmin.accInfo.accType
+            role: foundAdmin.accInfo.role
         }
     },
     deleteUser: async ({ searchBy, value }: any, { req }: CtxArgs) => {
         const field: string = searchBy;
         const data: string = value;
 
+
         resolverErrorChecker({
-            condition: !req.isAuth || !['admin', 'super_admin'].includes(req.accType),
+            condition: !req.isAuth || !['admin', 'superuser'].includes(req.role),
             code: !req.isAuth ? 401 : 403, message: !req.isAuth ? 'Please sign-in to complete request' : 'Unauthorized request.',
         });
 
@@ -461,8 +435,10 @@ export default {
             error.statusCode = 404;
             throw error;
         }
-        resolverErrorChecker({ condition: foundUser.accInfo.accType === 'super_admin', code: 500, message: 'This user cannot be deleted. nkiti ta gbuo gi!' });
+
+        resolverErrorChecker({ condition: foundUser.accInfo.role === 'superuser', code: 500, message: 'This user cannot be deleted. nkiti ta gbuo gi!' });
         await foundUser.deleteOne();
+
 
         const foundKyc = await Kyc.findOne({ userId: foundUser.id });
         if (foundKyc) {
@@ -470,7 +446,7 @@ export default {
             await foundKyc.deleteOne();
         }
 
-        if (foundUser.profilePic && foundUser.profilePic.includes('/')) {   // check if string includes `/` to ensure that it is a path
+        if (foundUser.profilePic) {
             clearImage(foundUser.profilePic);
         }
 
@@ -483,7 +459,7 @@ export default {
         const searchOption: string = searchBy.trim();
         const searchVal: string = value.trim();
         resolverErrorChecker({
-            condition: !req.isAuth || !req.accType.includes('admin'),
+            condition: !req.isAuth || !req.role.includes('admin'),
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue' : 'Forbidden requeest :('
         });
@@ -516,7 +492,7 @@ export default {
 
         const accessKeys = await AdminKey.getAdminKeys();
         const adminKeys = accessKeys.map(obj => obj.access);
-        const hasKeys = user.accInfo.accType!.includes('admin') && adminKeys.includes(user.username.slice(user.username.length - 5));
+        const hasKeys = user.accInfo.role!.includes('admin') && adminKeys.includes(user.username.slice(user.username.length - 5));
 
         return {
             id: user.id,
@@ -525,14 +501,14 @@ export default {
             lastName: user.lastName,
             username: user.username,
             email: user.email,
-            accType: user.accInfo.accType,
-            userstats: user.userstats
+            role: user.accInfo.role,
+            stats: user.stats
         }
     },
     createPost: async ({ postTitle }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Unauthorized request :('
         });
@@ -549,9 +525,9 @@ export default {
         return { success: true, message: 'Post created successfully.' };
     },
     fetchPosts: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Unauthorized request :('
         });
@@ -569,9 +545,9 @@ export default {
         return postDocs;
     },
     deletePost: async ({ postId }: ParentObjectData, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Unauthorized request :('
         });
@@ -585,9 +561,9 @@ export default {
         }
     },
     deleteComment: async ({ postId, commentId }: ParentObjectData, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Unauthorized request :('
         });
@@ -607,27 +583,27 @@ export default {
         }
     },
     getOrders: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
-        resolverErrorChecker({ condition: !isAuth || !['admin', 'super_admin'].includes(accType), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
+        const { isAuth, role } = req;
+        resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
         const orders = await Order.getOrders();
         return orders;
     },
     getOrder: async ({ orderId }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         const currency = req.currency as ICurrency;
 
-        resolverErrorChecker({ condition: !isAuth || !['admin', 'super_admin'].includes(accType), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
+        resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
         const order = await Order.getOrder(orderId, currency);
         return order;
     },
     deleteOrder: async ({ orderId }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
-        resolverErrorChecker({ condition: !isAuth || !['admin', 'super_admin'].includes(accType), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
+        const { isAuth, role } = req;
+        resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
         return await Order.deleteOrder(orderId);
     },
     updateOrderStatus: async ({ orderId, orderProgress }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
-        resolverErrorChecker({ condition: !isAuth || !['admin', 'super_admin'].includes(accType), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
+        const { isAuth, role } = req;
+        resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
 
         try {
             const order = await Order.findById(orderId);
@@ -638,16 +614,16 @@ export default {
                 throw error;
             }
 
-            const orderStatus = orderEnums.find(progress => progress.toLowerCase() === orderProgress.toLowerCase().trim());
-            resolverErrorChecker({ condition: !orderStatus, message: 'ERROR: Invalid input! [orderProgress] ', code: 422 });
+            const orderStatus = orderEnums.find(progress => progress.toLowerCase() === (orderProgress = orderProgress.toLowerCase().trim()));
+            resolverErrorChecker({ condition: !orderStatus, message: `ERROR: Invalid input! [${orderProgress}]`, code: 422 });
 
-            switch (orderProgress.toLowerCase()) {
+            switch (orderProgress) {
                 case 'in transit':
                     order.status = 'Processed';
                     break;
                 case 'completed':
                     order.status = 'Completed';
-                    order.toExpire = new Date(Date.now() + 600000);
+                    order.toExpire = new Date(Date.now() + 600000); // change duration 
                     break;
 
                 default:
@@ -663,9 +639,9 @@ export default {
         return { success: true, message: 'Order status updated' };
     },
     createTrendingGame: async ({ trendingGameInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -700,10 +676,10 @@ export default {
         return { success: true, message: 'content created successfully' };
     },
     trendingGamesList: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -719,10 +695,10 @@ export default {
         return games;
     },
     deleteTrendingGame: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -738,9 +714,9 @@ export default {
         }
     },
     getUsersKyc: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -762,9 +738,9 @@ export default {
 
     },
     deleteKyc: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -786,9 +762,9 @@ export default {
         }
     },
     viewUserKyc: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -812,9 +788,9 @@ export default {
         }
     },
     confirmKyc: async ({ id, userId, action }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -840,7 +816,7 @@ export default {
             <h1>Dear ${user!.firstName},</h1>
             <h1>Congratulations your KYC has been application has been verified and approved. </h1>
             </section>`
-            sendEmail(user!.email, 'KYC Application Review', body);
+            Mailing.sendEmail(user!.email, 'KYC Application Review', body).catch(err => console.log(err.toString()));
         }
 
         user!.save();
@@ -849,9 +825,9 @@ export default {
         return { success: true, message: 'KYC application reviewed' };
     },
     createGameDownload: async ({ adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -901,9 +877,9 @@ export default {
         return { success: true, message: 'Game Download created successfully.' }
     },
     deleteGameDownload: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -918,9 +894,9 @@ export default {
         return { success: true, message: 'Deleted successfully.' };
     },
     createOrEditCurrency: async ({ id, adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -941,9 +917,9 @@ export default {
         return { success: true, message: 'Currency created successfully.' };
     },
     getCurrencyList: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -951,9 +927,9 @@ export default {
         return await Currency.find();
     },
     deleteCurrency: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -969,9 +945,9 @@ export default {
     },
     setDefaultCurrency: async ({ currencyOption }: AdminParentObj, { req }: CtxArgs) => {
 
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -997,9 +973,9 @@ export default {
         }
     },
     createGameRepair: async ({ adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -1037,9 +1013,9 @@ export default {
         return { success: true, message: 'Game repair service created successfully.' };
     },
     deleteGameRepair: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -1059,9 +1035,9 @@ export default {
 
     },
     getRefunds: async ({ }, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -1069,9 +1045,9 @@ export default {
         return await Refund.refunds();
     },
     getRefundInfo: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -1084,9 +1060,9 @@ export default {
         }
     },
     updateRefundProgress: async ({ id, progress }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Forbidden request :(',
             code: !isAuth ? 401 : 403
         });
@@ -1114,10 +1090,10 @@ export default {
         return { success: true, message: 'Refund progress updated successfully!' };
     },
     createGameSwap: async ({ adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
             code: !isAuth ? 401 : 403
         });
@@ -1134,10 +1110,10 @@ export default {
         }
     },
     deleteGameSwap: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
             code: !isAuth ? 401 : 403
         });
@@ -1146,10 +1122,10 @@ export default {
 
     },
     createGameRent: async ({ adminQueryInput }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
             code: !isAuth ? 401 : 403
         });
@@ -1157,10 +1133,10 @@ export default {
         return await GameRent.newGameRent(adminQueryInput);
     },
     deleteGameRent: async ({ id }: AdminParentObj, { req }: CtxArgs) => {
-        const { isAuth, accType } = req;
+        const { isAuth, role } = req;
 
         resolverErrorChecker({
-            condition: !isAuth || !['admin', 'super_admin'].includes(accType),
+            condition: !isAuth || !['admin', 'superuser'].includes(role),
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
             code: !isAuth ? 401 : 403
         });

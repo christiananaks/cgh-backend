@@ -1,17 +1,17 @@
 import { HydratedDocument } from 'mongoose';
-
-import { Slide } from "../models/slide";
-import { UserData, CartObject, TypeGamingId, UserDocProps } from '../models/user';
-import { TypeUtilityBill, TypeValidId } from '../models/kyc';
 import { Request } from 'express';
-import { ICurrency } from '../models/currency';
+
+import { Slide } from "./slide";
+import { UserData, CartObject, TypeGamingId, UserDocProps } from './user';
+import { TypeUtilityBill, TypeValidId } from './kyc';
+import { ICurrency } from './currency';
 
 
 
 
 
 export interface CtxArgs {
-    req: Request & ReqObj;
+    req: ReqObj;
 }
 
 export interface ParentObjectData {
@@ -40,18 +40,19 @@ export interface ParentObjectData {
     imageUrls: string[];
 }
 
+
 type ReqObj = {
-    timedout: boolean;
+    token: string;
     guestUser: boolean;
-    // guestUser: { email: string, phone: string, address: string, cart: any[] };
     userId: string;
     isAuth: boolean;
-    accType: string;
+    role: string;
     user: HydratedDocument<UserData>;
     currency: ICurrency;
     get(header: string): string | undefined;
     isSuperReq: boolean | undefined;
-}
+} & Request;
+
 
 type AccData = {
     profilePic: string | null;
@@ -62,6 +63,7 @@ type AccData = {
 
 
 type UserQueryInput = {
+    dateOfBirth: string;
     validId: TypeValidId;
     payOnDelivery: { status: boolean, totalAmount: string | null };
     deliveryAddress: string;
@@ -79,7 +81,7 @@ type UserQueryInput = {
     username: string;
     profilePic: string | null;
     email: string;
-    phone: string | null;
+    phone: string | undefined;
     gamingIdHandle: string | null;
     platform: string;
     myGames: UserDocProps['myGames'];
@@ -88,3 +90,14 @@ type UserQueryInput = {
 };
 
 export type TActionStatus = { success: boolean, message: string };
+
+export interface IDocProps {
+    _doc: Omit<this, '_doc'>;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type TBlacklist = {
+    token: string;
+    date: string;
+};

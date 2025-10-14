@@ -137,7 +137,7 @@ export default async function verifyPayment(req: any, res: Response, next: NextF
 
         res.status(200).json({ orderInfo, transInfo });
 
-        await req.user.updateOne({ 'userstats.xp': req.user.userstats.xp + 5 });
+        await req.user.updateOne({ 'stats.xp': req.user.stats.xp + 5 });
 
     } else {
         // when order was already created from /create-pod-order // when customer pays we verify payment and update orderstatus
@@ -171,7 +171,7 @@ export default async function verifyPayment(req: any, res: Response, next: NextF
         req.foundOrder = await foundOrder.save();   // bind to request object in order to make foundOrder value available for use when updating user purchase history
 
         res.status(200).json({ orderInfo, transInfo });
-        await req.user.updateOne({ 'userstats.xp': req.user.userstats.xp + 5 });
+        await req.user.updateOne({ 'stats.xp': req.user.stats.xp + 5 });
     }
 
     // const order: HydratedDocument<IOrder> = req.foundOrder || orderInfo;
@@ -220,18 +220,21 @@ export default async function verifyPayment(req: any, res: Response, next: NextF
 
     // balance stock quantity
     if (items && items.length > 0) {
-        let docs = [];
         try {
-            for (const obj of items) {
-                let prodDoc = await Product.findById(obj.prodId);
-                if (prodDoc) {
-                    prodDoc!.stockQty -= obj.qty;
-
-                    docs.push(prodDoc);
-                }
+            let operations = [];
+            const prodIds = items.map(item => new mongoose.Types.ObjectId(item.prodId));
+            const queryRes = await Product.find({ _id: { $in: prodIds } });
+            for (const prod of queryRes) {
+                const orderedQty = items.find(item => item.prodId === prod.id)?.qty;
+                operations.push({
+                    updateOne: {
+                        filter: { _id: prod._id },
+                        update: { $set: { stockQty: prod.stockQty -= orderedQty || 0 } }
+                    }
+                });
             }
-            // await Promise.all(docs);
-            await Product.bulkSave(docs);
+            await Product.bulkWrite(operations);
+
         } catch (err: any) {
             console.log(err.message);
             next(err);

@@ -66,7 +66,7 @@ router.post('/verify-offline-payment', async (req, res, next) => {
             totalAmount: paymentInfo ? paymentInfo.amount.toString() : 'N/A'
         }
         user.purchaseHistory.push(purchaseInfo);
-        await user.updateOne({ 'userstats.xp': user.userstats.xp + 5 });
+        await user.updateOne({ 'stats.xp': user.stats.xp.value + 5 });
     } catch (err: any) {
         console.log(err.message);
         next(new Error('Error: Payment verification failed!'));

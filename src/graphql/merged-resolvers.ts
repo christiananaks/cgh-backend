@@ -1,11 +1,11 @@
 import { mergeResolvers } from "@graphql-tools/merge";
 
-import superAdminResolvers from "./admin/resolvers/super-admin-resolver";
+import superUserResolvers from "./admin/resolvers/super-user-resolver";
 import appResolvers from "./public/app-resolvers";
-import userResolvers from "./users/resolvers/users-resolvers";
+import userResolvers from "./user/resolvers/user-resolvers";
 import adminUserResolvers from "./admin/resolvers/admin-user-resolvers";
 
 
-const res: any = [superAdminResolvers, appResolvers, userResolvers, adminUserResolvers];
+const res = [superUserResolvers, appResolvers, userResolvers, adminUserResolvers];
 
 export default mergeResolvers(res);

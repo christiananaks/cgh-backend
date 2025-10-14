@@ -44,7 +44,7 @@ export class NewSlide {
         this.desc = desc;
         this.imageUrl = imageUrl;
         this.creator = createdBy;
-        this.createdAt = new Date().toLocaleTimeString() + ' ' + new Date().toDateString();
+        this.createdAt = new Date().toISOString();
     }
 
     save() {

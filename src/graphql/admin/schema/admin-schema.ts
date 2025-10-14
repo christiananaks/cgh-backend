@@ -27,6 +27,8 @@ export default `
         condition: String!
         price: String!
         stockQty: Int!
+        swap: Boolean
+        rent: Boolean
     }
 
     input SlideData {
@@ -65,8 +67,7 @@ export default `
         lastName: String!
         username: String!
         email: String!
-        accType: String!
-        userstats: UserStats
+        role: String!
     }
 
     type ActionStatus {

@@ -1,6 +1,6 @@
 import mongoose, { Model, Schema } from "mongoose";
-import { TActionStatus } from "../graphql/types-def";
-import Categories from "./categories";
+import { TActionStatus } from "./type-def";
+import Categories from "./category";
 import Product from "./product";
 import { resolverErrorChecker, validatePriceFormat } from "../util/helper";
 import { clearImage } from "../util/file-storage";

@@ -54,7 +54,7 @@ export interface ProductData {
     imageUrls: string[];
     desc?: string | null;
     price: string | number; // string for returning response, number for creating and saving to db
-    condition: string | null;
+    condition: string;
     stockQty: number;
     rent?: boolean;
     swap?: boolean;
@@ -62,7 +62,7 @@ export interface ProductData {
 }
 
 productSchema.statics.getProducts = async function (): Promise<ProductData[]> {
-    let getProdList: Document[] = await this.find().select('title category subcategory imageUrls desc condition price stockQty');
+    let getProdList: Document[] = await this.find().select('title category subcategory imageUrls desc condition price stockQty swap rent');
 
     const prodList: ProductData[] = getProdList.map((obj: any) => {
         return { id: obj.id, ...obj._doc }
@@ -79,16 +79,19 @@ productSchema.statics.getProduct = async function (prodId: string, currency: ICu
         throw error;
     }
     const price = calPrice(+prod._doc!.price, currency);
+
     return {
         id: prod.id,
-        title: prod._doc!.title,
-        category: prod._doc!.category,
-        subcategory: prod._doc!.subcategory,
-        imageUrls: prod._doc!.imageUrls,
-        desc: prod._doc!.desc,
+        title: prod.title,
+        category: prod.category,
+        subcategory: prod.subcategory,
+        imageUrls: prod.imageUrls,
+        desc: prod.desc,
         condition: prod.condition,
         price: price,
-        stockQty: prod._doc!.stockQty
+        stockQty: prod.stockQty,
+        swap: prod.swap,
+        rent: prod.rent
     };
 };
 

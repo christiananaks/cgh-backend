@@ -5,7 +5,7 @@ import AdminKey, { accessKeysFile } from "../../../models/admin-keys";
 import { Slide } from "../../../models/slide";
 import { resolverErrorChecker } from "../../../util/helper";
 import appResolvers from '../../public/app-resolvers';
-import { CtxArgs, ParentObjectData } from '../../types-def';
+import { CtxArgs, ParentObjectData } from '../../../models/type-def';
 
 
 
@@ -73,7 +73,7 @@ type TrendingGameData = {
 export default {
     createAdminUser: async ({ userQueryInput }: ParentObjectData, { req }: any) => {
         resolverErrorChecker({
-            condition: !req.isAuth || req.accType !== 'super_admin',
+            condition: !req.isAuth || req.role !== 'superuser',
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue.' : 'Forbidden request.'
         });
@@ -85,7 +85,7 @@ export default {
     },
     createAdminAccKeyword: async ({ keyword }: AdminParentObj, { req }: CtxArgs) => {
 
-        if (req.accType !== 'super_admin') {
+        if (req.role !== 'superuser') {
             const error = new Error('User is not authorized');
             Object.assign(error, { statusCode: 403 });
             throw error;
@@ -142,7 +142,7 @@ export default {
 
     generateAccessKey: async ({ }, { req }: CtxArgs) => {
         resolverErrorChecker({
-            condition: req.accType !== 'super_admin',
+            condition: req.role !== 'superuser',
             code: 403,
             message: 'Error: Unauthorized access.'
         });
@@ -151,7 +151,7 @@ export default {
         return AdminKey.genKey(keysArray);
     },
     clearAccessKeys: async ({ }, { req }: CtxArgs) => {
-        resolverErrorChecker({ condition: req.accType !== 'super_admin', code: 403, message: 'Error: Unauthorized user.' });
+        resolverErrorChecker({ condition: req.role !== 'superuser', code: 403, message: 'Error: Unauthorized user.' });
         fs.writeFile(accessKeysFile, JSON.stringify([]), (err: any) => {
             if (err) {
                 throw new Error(err.message);

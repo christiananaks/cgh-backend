@@ -12,7 +12,6 @@ interface CategoryModel extends Model<CategoryData, {}, {}>, CategoryData {
 export interface CategoryData {
     title: string;
     subcategoryData: Types.Map<Types.ObjectId[]>;
-    // items: Types.Array<ProductData>;
     addToCategory: (product: HydratedDocument<ProductData>) => Promise<void>;
     _doc: Omit<this, '_doc'>;
 }

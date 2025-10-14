@@ -2,26 +2,27 @@ import fs from 'fs';
 import crypto from 'crypto';
 
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 import validator from 'validator';
 
 //@ts-ignore
 import tldList from 'tld-list';
 
 import Product, { ProductData } from "../../models/product";
-import { CtxArgs, ParentObjectData } from "../types-def";
-import Categories from "../../models/categories";
+import { CtxArgs, ParentObjectData } from "../../models/type-def";
+import Categories from "../../models/category";
 import Post from "../../models/post";
 import User, { AccountInfo, UserStats } from "../../models/user";
 import AdminKey, { AccessData, accessKeysFile } from '../../models/admin-keys';
-import { activityReg, calPrice, resolverErrorChecker, sendEmail } from '../../util/helper';
+import { activityReg, calPrice, createTokens, resUserstats, resolverErrorChecker } from '../../util/helper';
 import ResetPassword from '../../models/reset-password';
 import TrendingGames from '../../models/trending-games';
-import GameDownload, { IGameDownload } from '../../models/game-download';
+import GameDownload from '../../models/game-download';
 import { ICurrency } from '../../models/currency';
 import GameRepair from '../../models/game-repair';
 import GameRent from '../../models/game-rent';
 import GameSwap from '../../models/game-swap';
+import Mailing from '../../models/mailing';
+
 
 
 interface CatParentData {
@@ -32,11 +33,11 @@ export default {
     createUser: async ({ userQueryInput }: ParentObjectData, { req }: CtxArgs) => {
         const firstName = userQueryInput.firstName.trim()[0].toUpperCase() + userQueryInput.firstName.trim().substring(1).toLowerCase();
         const lastName = userQueryInput.lastName.trim()[0].toUpperCase() + userQueryInput.lastName.trim().substring(1).toLowerCase();
-        const username = userQueryInput.username ? userQueryInput.username.trim() : firstName.at(0)! + lastName.at(0) + new Date().toISOString().split('.')[1];
+        const username = userQueryInput.username?.trim() || firstName.at(0)! + lastName.at(0) + new Date().toISOString().split('.')[1];
         const email = userQueryInput.email.trim().toLowerCase();
-        const phone = userQueryInput.phone ? userQueryInput.phone.trim() : null;
+        const phone = userQueryInput.phone?.trim();
         const password = userQueryInput?.password;
-        const profilePic = userQueryInput.profilePic || 'No profile pic uploaded.';
+        const profilePic = userQueryInput.profilePic;
         const gamingId = userQueryInput.gamingIdHandle ? { gamingIdHandle: userQueryInput.gamingIdHandle, platform: userQueryInput.platform } : null;
         const myGames = userQueryInput.myGames || [];
 
@@ -70,7 +71,7 @@ export default {
         if (phone) {
             resolverErrorChecker({
                 condition: !validator.isMobilePhone(phone, "en-NG"),
-                message: 'Invalid phone number',
+                message: 'Invalid phone number.',
                 code: 422
             });
         }
@@ -86,12 +87,13 @@ export default {
             code: 422
         });
 
-        const existingUser = await User.findOne({ email: email });
+        const existingUser = await User.findOne({ $or: [{ email: email }, { 'accInfo.phone': phone || '1234567890' }] });
 
         try {
             if (existingUser) {
-                const err = new Error('User already exists!');
-                Object.assign(err, { statusCode: 401 });
+                const isSameEmail = existingUser.email === email;
+                const err = new Error(isSameEmail ? 'User already exists!' : 'Phone number already exists!');
+                Object.assign(err, { statusCode: 422 });
                 throw err;
             }
 
@@ -103,31 +105,26 @@ export default {
 
             const hashedPw = await bcrypt.hash(password, 12);
 
-            const userstats: UserStats = {
-                streakPoints: 1,
-                xp: 5,
-                date: new Date()
-            }
 
             const accessData: AccessData[] = await AdminKey.getAdminKeys();
             const matchedKeyIndex = accessData.findIndex(data => data.access === username.slice(username.length - 5));
-            const isSuperAdmin = req.accType === 'super_admin' && req.isSuperReq === true;     // if req.super is true the function was called from super_admin
-            console.log('isSuperReq: ', req.isSuperReq, 'req.accType: ', req.accType);
+            const isSuperUser = req.role === 'superuser' && req.isSuperReq === true;     // if req.super is true the function was called from superuser
+            console.log('isSuperReq: ', req.isSuperReq, 'req.role: ', req.role);
 
             // set here cos we pass this via req in input args for createAdminUser() args resolver
             let accInfo: AccountInfo = {
-                accType: isSuperAdmin ? 'admin' : undefined,    // we set fallback value to undefined inorder to force the schema to use the default value we set in our schema
-                creator: isSuperAdmin ? 'super_admin' : undefined,
+                role: isSuperUser ? 'admin' : undefined,    // we set fallback value to undefined inorder to force the schema to use the default value we set in our schema
+                creator: isSuperUser ? 'superuser' : undefined,
                 phone: phone,
                 gamingId: gamingId,
                 activityReg: activityReg
             };
 
-            if (!isSuperAdmin && username.length > 9 && matchedKeyIndex > -1 && !accessData[matchedKeyIndex].user) {
-                accInfo.accType = 'admin';
+            if (!isSuperUser && username.length > 9 && matchedKeyIndex > -1 && !accessData[matchedKeyIndex].user) {
+                accInfo.role = 'admin';
             }
 
-            sendEmail(email, 'Sign Up Succeeded', '<h1>Thank You for joining the Classified Gamers, you successfully signed up!<h1/>');
+            Mailing.sendEmail(email, 'Sign Up Succeeded', '<h1>Thank You for joining the Classified Gamers, you successfully signed up!<h1/>').catch(err => console.log(err.toString()));
 
             let user = new User({
                 firstName: firstName,
@@ -136,57 +133,40 @@ export default {
                 profilePic: profilePic,
                 email: email,
                 password: hashedPw,
-                userstats: userstats,
                 accInfo: accInfo,
                 myGames: myGames
             });
 
-            try {
+            user = await user.save();
 
-                user = await user.save();
+            if (matchedKeyIndex > -1 && !accessData[matchedKeyIndex].user) {
+                accessData[matchedKeyIndex].user = email;
+                fs.writeFile(accessKeysFile, JSON.stringify(accessData), err => {
+                    if (err) console.log(err);
+                });
+            }
 
-                if (matchedKeyIndex > -1 && !accessData[matchedKeyIndex].user) {
-                    accessData[matchedKeyIndex].user = email;
-                    fs.writeFile(accessKeysFile, JSON.stringify(accessData), err => {
-                        if (err) console.log(err);
-                    });
-                }
+            return { success: true, message: 'Account created successfully' };
 
-            } catch (err: any) {
-                const dbError: any = err.errorResponse;
-                var error: any;
-                console.log('before error', dbError);
-                if (dbError && dbError.code === 11000) {
-                    console.log('after error');
-                    const fieldName = Object.keys(dbError.keyValue)[0];
+        } catch (err: any) {
+            var error: any;
+            // for mongodb database conflict error
+            if (err.errorResponse && err.code == 11000) {
+                const errRes = err.errorResponse;
+                const field = Object.keys(errRes.keyValue)[0];
 
-                    error = new Error(`${fieldName} already exists`);
-                    error.statusCode = 409;
-                    throw error;
-                }
-                console.log('original mongoose error:', '\n\r', err._message, err.errors[Object.keys(err.errors)[0]]['properties']['message'], '\n');
+                error = new Error(`${field} already exists`);
+                error.statusCode = 409;
+                throw error;
 
+            } else if (err.errorResponse) {  // other mongodb database error
                 error = new Error(`An error occurred. Info: ${err.message}`);
                 error.statusCode = 500;
                 throw error;
             }
+            // console.log('original mongoose error:', '\n\r', err._message, err.errors[Object.keys(err.errors)[0]]['properties']['message'], '\n');
 
-
-            return {
-                id: user.id,
-                firstName: firstName,
-                lastName: lastName,
-                username: username,
-                email: email,
-                profilePic: profilePic,
-                password: hashedPw,
-                userstats: { ...userstats, date: userstats.date.toISOString() },
-                accInfo: user.accInfo,
-                myGames: user.myGames
-            };
-
-        } catch (err) {
-            console.log('enclosing scope try-catch:\n\r%s', err);
+            err.statusCode = err.statusCode || 500;
             throw err;
         }
     },
@@ -203,10 +183,10 @@ export default {
         });
 
         resolverErrorChecker({ condition: validator.isEmpty(enteredPassword) || !validator.isLength(enteredPassword, { min: 6 }), message: 'Password too short.', code: 422 });
-        const foundUser = await User.findOne({ email: enteredEmail });
+        let foundUser = await User.findOne({ email: enteredEmail });
 
         if (!foundUser) {
-            const error = new Error('The entered username or password is incorrect.');
+            const error = new Error('The entered email or password is incorrect.');
             Object.assign(error, { statusCode: 401 });
             throw error;
         }
@@ -219,64 +199,31 @@ export default {
             throw error;
         }
         const accessData = await AdminKey.getAdminKeys();
-        const matchedKeyIndex = accessData.findIndex(data => data.access === foundUser.username.slice(foundUser.username.length - 5));
-        const creator = foundUser.accInfo.creator === 'super_admin';
+        const matchedKeyIndex = accessData.findIndex(data => data.access === foundUser!.username.slice(foundUser!.username.length - 5));
+        const creator = foundUser.accInfo.creator === 'superuser';
 
-        const userAccCheck = !creator && foundUser.accInfo.accType === 'admin';
+        const userAccCheck = !creator && foundUser.accInfo.role === 'admin';
         if (userAccCheck && 0 > matchedKeyIndex || userAccCheck && accessData[matchedKeyIndex].user !== foundUser.email) {
-            foundUser.accInfo.accType = 'standard';
+            foundUser.accInfo.role = 'standard';
         }
 
-        const presentDay = new Date();
-        const lastLoginDate = foundUser.userstats.date;
-        const oneDay = 86400000;    // in milliseconds
+        const { stats } = foundUser;
 
+        const userstatsData = resUserstats(stats);
 
-        if (lastLoginDate.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastLoginDate.valueOf() <= oneDay) {
+        const tokens = createTokens(foundUser!);
+        foundUser.refreshToken = tokens.refreshToken;
 
-            const userstats = {
-                streakPoints: ++foundUser.userstats.streakPoints,
-                xp: foundUser.userstats.xp,
-                date: new Date()
-            }
-            // await foundUser.updateOne({ userstats: userstats }); // doesn't commit changes until .save() is called
-            foundUser.userstats = userstats;
-        } else {
-            foundUser.userstats.date = presentDay;
-        }
+        foundUser = await foundUser.save();
 
-        const userstats = { streakPoints: foundUser.userstats.streakPoints, xp: foundUser.userstats.xp, date: foundUser.userstats.date.toISOString() };
-
-        const accessToken = jwt.sign({
-            userId: foundUser.id,
-            email: foundUser.email,
-            userstats: userstats,
-            accType: foundUser.accInfo.accType
-        }, `${process.env.ACCESS_TOKEN_PRIVATE_KEY}`, { expiresIn: '3h' });
-
-        const refreshToken = jwt.sign({
-            userId: foundUser.id,
-            email: foundUser.email,
-            userstats: userstats,
-            accType: foundUser.accInfo.accType,
-            eTime: new Date(),
-        }, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`, { expiresIn: '5h' });
-
-
-        foundUser.refreshToken = refreshToken;
-
-        await foundUser.save();
-
-        console.log('AccessToken: ', accessToken);
+        console.log('AccessToken: ', tokens.accessToken);
 
 
         return {
-            userId: foundUser.id,
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            userstats: userstats,
-            accType: foundUser.accInfo.accType
+            userId: foundUser.id, ...foundUser._doc, stats: userstatsData, purchaseHistory: JSON.stringify(foundUser.purchaseHistory),
+            accessToken: tokens.accessToken,
         };
+
     },
     resetPassword: async ({ email }: ParentObjectData, { }: CtxArgs,) => {
         const userEmail = email.trim().toLowerCase();
@@ -313,7 +260,7 @@ export default {
         `;
 
         try {
-            await sendEmail(foundUser!.email, 'Password Reset', mailBody);
+            await Mailing.sendEmail(foundUser!.email, 'Password Reset', mailBody);
         } catch (err: any) {
             console.log(err);
             return { success: false, message: 'Password reset not successful :(' };
@@ -354,11 +301,16 @@ export default {
             <p>Dear ${foundUser.lastName},</p>
             <p>Your password have been successfully changed</p>.
         `;
-        sendEmail(foundUser.email, 'Password Reset Successful', mailBody);
+        Mailing.sendEmail(foundUser.email, 'Password Reset Successful', mailBody).catch(err => console.log(err.toString()));
         foundUser.save();
         // await foundToken?.deleteOne();
         await ResetPassword.deleteMany({ userId: userId });
         return { success: true, message: 'Password reset succeeded.' };
+    },
+    getUsernames: async () => {
+        const usernames = await User.find().select('username');
+
+        return usernames.map((user) => user.username);
     },
     getAllCategories: async ({ }: ParentObjectData,) => {
         return await Categories.getDbCategories();
@@ -379,7 +331,6 @@ export default {
 
             return products;
         }
-
     },
     getProduct: async ({ prodId }: ParentObjectData, { req }: CtxArgs) => {
 
@@ -393,6 +344,7 @@ export default {
         return catProducts;
     },
     getPost: async () => {
+
         return await Post.getPost();
     },
     getTrendingGames: async () => {

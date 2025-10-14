@@ -3,8 +3,8 @@ import { GraphQLSchema } from 'graphql';
 
 import baseSchema from "./base-schema";
 import adminSchema from "./admin/schema/admin-schema";
-import appSchemaDef from "./public/app-schema";
-import userSchemaDef from "./users/schema/user-schema";
+import appSchema from "./public/app-schema";
+import userSchema from "./user/schema/user-schema";
 
 
 
@@ -17,7 +17,7 @@ import userSchemaDef from "./users/schema/user-schema";
 // };
 
 const mergedSchema: GraphQLSchema = makeExecutableSchema({
-    typeDefs: [baseSchema, adminSchema, appSchemaDef, userSchemaDef],
+    typeDefs: [baseSchema, adminSchema, appSchema, userSchema],
 
 });
 

@@ -51,7 +51,7 @@ export async function paystackVerifyPayment(reference: string) {
             },
         });
 
-        const resData = await verify.json();
+        const resData: any = await verify.json();
 
         // filter response data
         let data: { [key: string]: any } = {};
@@ -88,12 +88,6 @@ interface IOrderArgObject {
     req: any;
 }
 
-// type TServiceProductOrder = {
-//     orderTitle: string;
-//     orderData: { orderInfo: Types.ObjectId, paymentStatus: string };
-// };
-
-// type TShopProducts = ProductData[];
 
 export type TOrderInfo = {
     orderNo: string;
@@ -146,7 +140,7 @@ export async function createOrder(orderArgObj: IOrderArgObject): Promise<TOrderI
         });
 
 
-        // send mail.........order details and order No
+        //SEND MAIL HERE.........order details and order No
 
         orderInfo = {
             orderNo: order.id + '-' + paymentData!.transRef,

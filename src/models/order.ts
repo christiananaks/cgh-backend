@@ -1,6 +1,10 @@
 import mongoose, { Model, Types, Document, HydratedDocument } from "mongoose";
+
 import { calPrice, resolverErrorChecker } from "../util/helper";
 import { ICurrency } from "./currency";
+import Refund from "./refund";
+import User from './user';
+import Currency from './currency';
 
 
 const Schema = mongoose.Schema;
@@ -75,12 +79,11 @@ const orderSchema = new Schema<IOrder, IOrderModel, IOrderMethods>({
             'Repair succeeded',
             'Repair failed',
             'Sent',
-            'Paid', 'Order rejected'],
+            'Paid', 'Order rejected', 'Out of stock'],
     },
-    reason: String,
     toExpire: {
         type: Date,
-        expires: 0
+        expires: 0  // expire on the provided date value
     }
 }, { timestamps: true });
 
@@ -132,14 +135,38 @@ orderSchema.statics.getOrder = async function (orderId: string, currency: ICurre
 }
 
 orderSchema.statics.deleteOrder = async function (orderId: string) {
-    try {
-        const order = await this.findById(orderId);
-        resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
-        await order?.deleteOne();
-    } catch (err: any) {
-        console.log(err.message);
-        throw err;
+
+    let order = await this.findById(orderId);
+    resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
+    order = order!;
+    order.deleteOne();
+    await order.save();
+
+    // create full refund after deleting order when paid order was canceled before item was delivered 
+    let isCanceledOrder = order.payment !== null && !['completed', 'delivered', 'order rejected', 'sent'].includes(order.status.toLowerCase()) === true;
+    var canceledOrderData = isCanceledOrder ? {} as { [key: string]: any } : undefined;
+    if (isCanceledOrder) {
+        const user = await User.findById(order.userInfo.userId);
+        const currency = await Currency.findOne({ currency: order.payment!.currency });
+        Object.assign(canceledOrderData!, { user: user, currency: currency });
     }
+
+    if (canceledOrderData?.user && canceledOrderData?.currency) {
+        const { user, currency } = canceledOrderData;
+        await Refund.create({
+            userInfo: {
+                userId: user.id,
+                email: user.email,
+                username: user.username
+            },
+            amount: calPrice(order.payment!.amount, currency).toString(),
+            orderInfo: new Types.ObjectId(order._id),
+            reason: 'Canceled order',
+            progress: 'Processing'
+        });
+    }
+    // ==================================================================================================== //
+
     return { success: true, message: 'Order was deleted successfully.' };
 }
 
@@ -162,7 +189,6 @@ export interface IOrder extends IOrderProps, IOrderMethods {
     product: { orderTitle: string, orderData: IProductOrder } | undefined;
     payment: PaymentInfo | null;
     status: string;
-    reason?: string;
     toExpire?: Date;
 }
 

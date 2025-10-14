@@ -3,7 +3,7 @@ export default `
         phone: String
         gamingId: GamingId
         kycStatus: String!
-        accType: String!
+        role: String!
         creator: String!
     }
 
@@ -25,7 +25,7 @@ export default `
         username: String!
         email: String!
         password: String!
-        userstats: UserStats!
+        stats: UserStats!
         accInfo: AccInfo!
         myGames: [MyGames!]!
         purchaseHistory: String
@@ -35,28 +35,32 @@ export default `
         firstName: String!
         lastName: String!
         username: String
-        profilePic: String
         email: String!
-        phone: String!
-        gamingIdHandle: String
-        platform: String
-        myGames: [MyGamesInput!]
+        phone: String
         password: String!
         confirmPassword: String!
     }
 
     type UserStats {
-        streakPoints: Int!
+        sp: Int!
         xp: Int!
+        maxXp: Int!
+        level: Int!
         date: String!
     }
 
     type AuthData {
-        userId: String!
+        userId: ID!
+        profilePic: String
+        firstName: String!
+        lastName: String!
+        username: String!
+        email: String!
+        stats: UserStats!
+        accInfo: AccInfo!
+        myGames: [MyGames!]!
+        purchaseHistory: String
         accessToken: String!
-        refreshToken: String!
-        userstats: UserStats!
-        accType: String!
     }
 
     type CatData {
@@ -99,6 +103,7 @@ export default `
 
     type RootQuery {
         login(email: String!, password: String!): AuthData!
+        getUsernames: [String!]!
         getAllProducts: [Product!]!
         getProduct(prodId: String!): Product!
         getCatProducts(catTitle: String!): [Product!]!
@@ -119,7 +124,7 @@ export default `
     }
 
     type RootMutation {
-        createUser(userQueryInput: UserInputData): UserData!
+        createUser(userQueryInput: UserInputData): ActionStatus!
         postNewPassword(userQueryInput: NewPasswordData): ActionStatus!
     }
 `;

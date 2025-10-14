@@ -47,7 +47,7 @@ export const createReqOrder = async (req: Request, res: Response, next: NextFunc
         inspectionFee = 'Paid';
     }
 
-    // if `items` is undefined then we get that `product` is NOT of shop order type
+    // if `items` is undefined then we know that `product` is NOT of shop product order kind
     if (!items) {
 
         const prodData: IProductOrder = {

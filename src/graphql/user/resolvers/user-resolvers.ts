@@ -2,25 +2,57 @@
 import mongoose, { Types } from "mongoose";
 import validator from 'validator';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 import Post from "../../../models/post";
 import ServerMnt from "../../../models/serv-mnt";
 import { initializePayment } from "../../../util/order-payment";
 import User, { TShopProduct } from "../../../models/user";
-import { resolverErrorChecker, sendEmail, calPrice } from "../../../util/helper";
-import { CtxArgs, ParentObjectData } from "../../types-def";
+import { resolverErrorChecker, calPrice, createTokens, blacklistToken, resUserstats } from "../../../util/helper";
+import { CtxArgs, ParentObjectData } from "../../../models/type-def";
 import Product from '../../../models/product';
 import Kyc from '../../../models/kyc';
-// import RepairOrder from "../../../models/repair-order";
-import GameRepair from "../../../models/game-repair";
-import GameDownload from "../../../models/game-download";
 import Order from "../../../models/order";
 import Refund from "../../../models/refund";
-
+import Mailing from "../../../models/mailing";
 
 
 
 export default {
+    getAuthUser: async ({ id }: ParentObjectData, { req }: CtxArgs) => {
+        const authHeader = req.get('Authorization');
+        resolverErrorChecker({ condition: !authHeader, message: 'Error: Auth error.', code: 401 });
+
+        const user = await User.findById(id);
+        resolverErrorChecker({ condition: !user, message: 'User not found :(', code: 404 });
+
+        let tokens: { accessToken: string, refreshToken: string } | null;
+        try {
+            // jwt.verify() throws an error where token is expired.
+            jwt.verify(user!.refreshToken!, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`);
+
+            const userstats = resUserstats(user!.stats);
+            tokens = createTokens(user!);
+
+            user!.refreshToken = tokens.refreshToken;
+            user!.save();
+
+            return {
+                accessToken: tokens!.accessToken, user: {
+                    ...user!._doc, stats: userstats, id: user!.id
+                }
+            };
+
+        } catch (err: any) {
+            const isTokenError = err.toString().toLowerCase().includes('expired');
+            if (isTokenError) {
+                const error: { [key: string]: any } = new Error('Expired token!');
+                error.statusCode = 401;
+                throw error;
+            }
+            throw err;
+        }
+    },
     getRecommendedProducts: async ({ }, { req }: CtxArgs) => {
         const { isAuth, user, currency } = req;
 
@@ -65,16 +97,15 @@ export default {
 
         return recProds;
     },
-
     logout: async ({ }: ParentObjectData, { req }: CtxArgs) => {
-        const { isAuth, accType, user, userId } = req;
+        const { isAuth, role, user, userId } = req;
         resolverErrorChecker({ condition: !isAuth, message: 'You are not logged in!', code: 500 });
-
+        await blacklistToken(req.token);
         user.refreshToken = undefined;
 
         await user.save();
 
-        if (accType.endsWith('admin')) {
+        if (['admin', 'superuser'].includes(role)) {
             await ServerMnt.findOneAndDelete({ startedBy: new mongoose.Types.ObjectId(userId) });
         }
         return true;
@@ -111,9 +142,9 @@ export default {
         }
 
         if (user.accInfo.activityReg.includes('add-to-cart')) {
-            // update userstats xp // remove activity from user activityReg
+            // update stats xp // remove activity from user activityReg
 
-            await user.updateOne({ 'userstats.xp': user.userstats.xp + 5 });
+            await user.updateOne({ 'stats.xp': user.stats.xp.value + 5 });
             user.accInfo.activityReg = user.accInfo.activityReg.filter(activity => activity !== 'add-to-cart');
         }
 
@@ -146,35 +177,6 @@ export default {
     getCheckout: async ({ }: ParentObjectData, { req }: CtxArgs) => {
         const { isAuth, user, userId, currency } = req;
 
-        // if (req.guestUser.cart) {
-        //     let subTotal = 0;
-        //     const prodInfo = req.guestUser.cart.map((prod) => {
-        //         const price = calPrice(+prod.price, currency);
-        //         subTotal += price * prod.quantity;
-        //         const coverImageUrl: string | undefined = (prod.imageUrls as string[]).find(imageUrl => imageUrl.includes('slot0'));
-
-        //         return {
-        //             prodId: prod.prodId.toString(),
-        //             title: prod.title,
-        //             category: prod.category,
-        //             subcategory: prod.subcategory,
-        //             condition: prod.condition,
-        //             imageUrl: coverImageUrl,
-        //             price: price,
-        //             qty: prod.quantity
-        //         }
-        //     });
-
-
-        //     return {
-        //         products: prodInfo,
-        //         subTotal: subTotal,
-        //         fullname: `Guest User`,
-        //         email: req.guestUser.email,
-        //         phone: req.guestUser.phone,
-        //         deliveryAddress: req.guestUser.address
-        //     };
-        // }
         resolverErrorChecker({
             condition: !isAuth,
             code: 401,
@@ -266,7 +268,7 @@ export default {
         const result = await user.editUserWishlist(prodId);
         if (result.addedToWishlist && user.accInfo.activityReg.includes('add-to-wishlist')) {
             user.accInfo.activityReg = user.accInfo.activityReg.filter(activity => activity !== 'add-to-wishlist');
-            await user.updateOne({ 'userstats.xp': user.userstats.xp + 5, 'accInfo.activityReg': user.accInfo.activityReg });
+            await user.updateOne({ 'stats.xp': user.stats.xp.value + 5, 'accInfo.activityReg': user.accInfo.activityReg });
         }
         return result;
     },
@@ -290,13 +292,13 @@ export default {
         let findComment = await Post.find();
         const commentIndex = findComment[0].comments.findIndex((comm) => comm.userInfo.id.toString() === userId);
         if (0 > commentIndex) {
-            user.userstats.xp++;
+            user.stats.xp.value++;
             user.save();
         }
 
         await post?.pushComment(commentData);
         if (user.accInfo.activityReg.includes('add-comment')) {
-            user.userstats.xp = user.userstats.xp + 5;
+            user.stats.xp.value = user.stats.xp.value + 5;
             user.accInfo.activityReg = user.accInfo.activityReg.filter(activity => activity !== 'add-comment');
             user.save();
         }
@@ -389,8 +391,8 @@ export default {
         resolverErrorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do not match!', code: 422 });
         try {
             newPassword = await bcrypt.hash(newPassword, 12);
+            await Mailing.sendEmail(user.email, 'Password Changed Successful', '<h1>Your password has been changed successfully!<h1/>');
             await user.updateOne({ password: newPassword });
-            sendEmail(user.email, 'Password Changed Successful', '<h1>Your password has been changed successfully!<h1/>');
         } catch (err: any) {
             console.log(err.message);
             return { success: false, message: 'Password update failed!' };
@@ -436,6 +438,10 @@ export default {
             docUrl: userQueryInput.utilityBill.docUrl
         };
 
+        const dateOfBirth = new Date(userQueryInput.dateOfBirth);
+
+        resolverErrorChecker({ condition: Date.parse(dateOfBirth.toISOString()) < Date.parse("1945-01-01"), code: 422, message: 'Invalid date of birth!' });
+
         resolverErrorChecker({
             condition: !validator.isMobilePhone(phone, "en-NG"),
             message: 'Invalid phone number',
@@ -445,6 +451,7 @@ export default {
         await Kyc.create({
             userId: user._id,
             fullname: `${user.firstName} ${user.lastName} (${user.username})`,
+            dateOfBirth: dateOfBirth.toDateString(),
             phone: phone,
             residenceAddress: residenceAddress,
             validId: validId,
@@ -452,7 +459,7 @@ export default {
         });
 
         if (user.accInfo.activityReg.includes('created-kyc')) {
-            await user.updateOne({ 'userstats.xp': user.userstats.xp + 5, 'accInfo.kycStatus': 'Pending' });
+            await user.updateOne({ 'stats.xp': user.stats.xp.value + 5, 'accInfo.kycStatus': 'Pending' });
             user.accInfo.activityReg = user.accInfo.activityReg.filter(activity => activity !== 'created-kyc');
         } else {
             await user.updateOne({ 'accInfo.kycStatus': 'Pending' });
@@ -479,7 +486,7 @@ export default {
             orderInfo: JSON.stringify(orderInfo)
         };
     },
-    postOrderRefund: async ({ orderId, userQueryInput, imageUrls, amount }: ParentObjectData, { req }: CtxArgs) => {
+    postOrderRefund: async ({ orderId, prodId, userQueryInput, imageUrls, amount }: ParentObjectData, { req }: CtxArgs) => {
 
         const { isAuth, userId, user } = req;
         resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
@@ -494,10 +501,15 @@ export default {
             resolverErrorChecker({ condition: !validator.isLength(userQueryInput.otherReason, { min: 20, max: 500 }), message: 'Description length too short :(', code: 422 });
         }
 
+        const foundRefund = await Refund.findOne({ orderInfo: new Types.ObjectId(orderId), prodId: undefined });
+        // if found then we know refund exist for the whole order
+        resolverErrorChecker({ condition: foundRefund !== null, message: 'Refund already exist for this order.', code: 409 });
+
         await Refund.create({
             userInfo: { userId: userId, email: user.email, username: user.username },
             amount: amount,
             orderInfo: new Types.ObjectId(orderId),
+            prodId: prodId,
             reason: userQueryInput.reason,
             otherReason: userQueryInput.otherReason,
             imageUrls: imageUrls
@@ -523,6 +535,7 @@ export default {
         return {
             amount: foundRefund.amount,
             orderInfo: foundRefund.orderInfo,
+            prodId: foundRefund.prodId,
             reason: foundRefund.reason,
             otherReason: foundRefund.otherReason,
             imageUrls: foundRefund.imageUrls,

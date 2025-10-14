@@ -1,5 +1,5 @@
 import ServerMnt from "../models/serv-mnt";
-import { resolverErrorChecker, loginReqAccType } from "../util/helper";
+import { resolverErrorChecker, loginReqAccRole } from "../util/helper";
 
 
 export default async (req: any, res: any, next: any) => {
@@ -7,19 +7,19 @@ export default async (req: any, res: any, next: any) => {
     if (1 > mgtState.length) {
         return next();
     }
-    const result = await loginReqAccType(req, mgtState[0]);
-    req.accType = result.accType || req.accType;   // set the logged in request acctype. if null keep the existing.
-    console.log('auth accType: ', req.accType, '. login request accType: ', result.accType, Date.now() >= mgtState[0].expireAt.getTime());
+    const result = await loginReqAccRole(req, mgtState[0]);
+    req.role = result.role || req.role;   // set the logged in request role. if null keep the existing.
+    console.log('auth role: ', req.role, '. login request role: ', result.role, Date.now() >= mgtState[0].expireAt.getTime());
     try {
-        resolverErrorChecker({ condition: !req.isAuth && !req.accType, code: 500, message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}` });
+        resolverErrorChecker({ condition: !req.isAuth && !req.role, code: 500, message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}` });
         resolverErrorChecker({
-            condition: mgtState[0].level === 2 && req.accType !== 'super_admin',
+            condition: mgtState[0].level === 2 && req.role !== 'superuser',
             code: 500,
             message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}`
         });
 
         resolverErrorChecker({
-            condition: mgtState[0].level === 1 && !req.accType.endsWith('admin'),
+            condition: mgtState[0].level === 1 && !['admin', 'superuser'].includes(req.role),
             code: 500,
             message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}`
         });
