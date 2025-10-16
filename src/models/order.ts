@@ -70,7 +70,6 @@ const orderSchema = new Schema<IOrder, IOrderModel, IOrderMethods>({
         required: true,
         enum: ['Pending',
             'Confirmed payment',
-            'Processing',
             'Processed',
             'Delivered',
             'Completed',
@@ -79,7 +78,7 @@ const orderSchema = new Schema<IOrder, IOrderModel, IOrderMethods>({
             'Repair succeeded',
             'Repair failed',
             'Sent',
-            'Paid', 'Order rejected', 'Out of stock'],
+            'Order rejected', 'Out of stock'],
     },
     toExpire: {
         type: Date,
@@ -169,6 +168,75 @@ orderSchema.statics.deleteOrder = async function (orderId: string) {
 
     return { success: true, message: 'Order was deleted successfully.' };
 }
+export const orderProgressOptions = {
+    shop: [
+        'sent',
+        'out of stock',
+        'confirmed payment',
+        'reject order',
+        'in transit',
+        'delivered',
+        'completed'
+
+    ],
+    product: [
+        'received',
+        'in transit',
+        'sent',
+        'out of stock',
+        'repair succeeded',
+        'processing repair',
+        'repair failed',
+        'reject order',
+        'delivered',
+        'completed'
+    ]
+};
+
+orderSchema.methods.updateOrderDoc = async function (orderProgress: string, orderStatus?: string) {
+
+    switch (orderProgress) {
+        case 'sent':
+            this.status = 'Sent';
+            break;
+        case 'out of stock':
+            this.status = 'Out of stock';
+            break;
+        case 'confirmed payment':
+            this.status = 'Confirmed payment';
+            break;
+        case 'reject order':
+            this.status = 'Order rejected';
+            break;
+        case 'in transit':
+            this.status = 'Processed';
+            break;
+        case 'repair succeeded':
+            this.status = 'Repair succeeded';
+            break;
+        case 'processing repair':
+            this.status = 'Repair in progress';
+            break;
+        case 'repair failed':
+            this.status = 'Repair failed';
+            break;
+        case 'received':
+            this.status = 'Received';
+            break;
+        case 'delivered':
+            this.status = 'Delivered';
+            break;
+        case 'completed':
+            this.status = 'Completed';
+            this.toExpire = new Date(Date.now() + 600000); // change duration 
+            break;
+
+        default:
+            this.updateOne({ status: orderStatus });
+    }
+
+    this.save();
+}
 
 interface IOrderModel extends Model<IOrder, {}, IOrderMethods> {
     // static type def here
@@ -179,6 +247,7 @@ interface IOrderModel extends Model<IOrder, {}, IOrderMethods> {
 
 interface IOrderMethods {
     // method type def here
+    updateOrderDoc(orderProgress: string, orderStatus?: string): Promise<void>;
 }
 
 

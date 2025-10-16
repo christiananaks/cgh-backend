@@ -226,6 +226,11 @@ export default `
         rate: String!
     }
 
+    type OrderProgressOptions {
+        shop: [String!]!
+        product: [String!]!
+    }
+
     input RepairInput {
         title: String!
         imageUrl: String!
@@ -293,6 +298,7 @@ export default `
         findUser(searchBy: String!, value: String!): UserInfo
         fetchPosts: [PostData!]!
         getOrders: [Order!]!
+        getOrderProgressOptions: OrderProgressOptions!
         getOrder(orderId: ID!): OrderDetails!
         trendingGamesList: [Game!]!
         getUsersKyc: [KycList!]!

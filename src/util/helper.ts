@@ -14,7 +14,6 @@ import { TBlacklist } from '../models/type-def';
 
 export let allGenre = new Set(['Action', 'Action-Adventure', 'Role-Playing Games (RPGs)', 'Simulation', 'Sports', 'Versus', 'Adventure', 'Racing']);
 export const orderEnums = ['Pending', 'Confirmed Payment', 'Processing', 'Processed', 'Delivered', 'Completed'];
-export const repairStatusEnum = ['Pending', 'Confirmed Payment', 'Processed', 'Received', 'Completed', 'Repair in progress', 'Repair succeeded', 'Repair failed', 'Sent', 'Delivered'];
 export const activityReg = [
     'add-to-cart',
     'add-to-wishlist',
@@ -23,6 +22,8 @@ export const activityReg = [
     'kyc-success',
     'uploaded-profile-pic'
 ];
+
+
 
 /**
  * Generates accessToken and refreshToken for auth user.

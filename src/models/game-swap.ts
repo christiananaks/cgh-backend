@@ -90,12 +90,10 @@ gameSwapSchema.statics.newGameSwap = async function (queryInput: IGameSwap) {
     });
 
     // genre input validation / 
-    let defaultGenresCopy = new Set([...allGenre]);
+    let allGenresCopy = new Set([...allGenre]);
     genre.forEach((word) => {
-        defaultGenresCopy.add(word);
-        if (defaultGenresCopy.size > allGenre.size) {
-            defaultGenresCopy = new Set(allGenre);  // resetting the set to defualt values
-            console.log('reset to default:', defaultGenresCopy);
+        allGenresCopy.add(word);
+        if (allGenresCopy.size > allGenre.size) {
             const error: { [key: string]: any } = new Error(`Error: Invalid genre: ${word}`);
             error.statusCode = 422;
             throw error;
@@ -104,7 +102,7 @@ gameSwapSchema.statics.newGameSwap = async function (queryInput: IGameSwap) {
     /***************************************** */
 
     // Update product swap value if prod exists /
-    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: queryInput.platform, title: queryInput.title });
+    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: queryInput.platform, title: queryInput.title }, { swap: true });
     /***************************************** */
 
     await this.create(queryInput);

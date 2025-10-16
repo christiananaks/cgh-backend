@@ -2,20 +2,20 @@ import path from 'path';
 import fs from 'fs';
 
 import validator from 'validator';
+import mongoose, { HydratedDocument } from 'mongoose';
 
 import { CtxArgs, ParentObjectData } from "../../../models/type-def";
 import User, { UserData } from "../../../models/user";
-import { resolverErrorChecker, repairStatusEnum, orderEnums, allGenre, validatePriceFormat } from "../../../util/helper";
+import { resolverErrorChecker, orderEnums, validatePriceFormat } from "../../../util/helper";
 import { paths } from '../../../util/path-linker';
 import AdminKey from "../../../models/admin-keys";
 import { NewSlide, getSlidesFromFile } from "../../../models/slide";
 import { clearImage } from "../../../util/file-storage";
 import Product, { ProductData } from '../../../models/product';
-import Categories, { CategoryData } from '../../../models/category';
+import Categories from '../../../models/category';
 import { AdminParentObj } from './super-user-resolver';
 import Post from '../../../models/post';
-import mongoose, { HydratedDocument } from 'mongoose';
-import Order from '../../../models/order';
+import Order, { orderProgressOptions } from '../../../models/order';
 import TrendingGames from '../../../models/trending-games';
 import Kyc from '../../../models/kyc';
 import GameDownload from '../../../models/game-download';
@@ -25,7 +25,6 @@ import GameRepair from '../../../models/game-repair';
 import Refund from '../../../models/refund';
 import GameSwap, { IGameSwap } from '../../../models/game-swap';
 import GameRent from '../../../models/game-rent';
-import { EventEmitter } from 'nodemailer/lib/xoauth2';
 import Mailing from '../../../models/mailing';
 
 
@@ -596,6 +595,12 @@ export default {
         const order = await Order.getOrder(orderId, currency);
         return order;
     },
+    getOrderProgressOptions: async ({ }, { req }: CtxArgs) => {
+        const { isAuth, role } = req;
+
+        resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
+        return { ...orderProgressOptions };
+    },
     deleteOrder: async ({ orderId }: AdminParentObj, { req }: CtxArgs) => {
         const { isAuth, role } = req;
         resolverErrorChecker({ condition: !isAuth || !['admin', 'superuser'].includes(role), message: !isAuth ? 'Please login to continue.' : 'Forbidden request', code: !isAuth ? 401 : 403 });
@@ -617,20 +622,7 @@ export default {
             const orderStatus = orderEnums.find(progress => progress.toLowerCase() === (orderProgress = orderProgress.toLowerCase().trim()));
             resolverErrorChecker({ condition: !orderStatus, message: `ERROR: Invalid input! [${orderProgress}]`, code: 422 });
 
-            switch (orderProgress) {
-                case 'in transit':
-                    order.status = 'Processed';
-                    break;
-                case 'completed':
-                    order.status = 'Completed';
-                    order.toExpire = new Date(Date.now() + 600000); // change duration 
-                    break;
-
-                default:
-                    await order.updateOne({ status: orderStatus });
-            }
-
-            order.save();
+            await order.updateOrderDoc(orderProgress, orderStatus);
 
         } catch (err: any) {
             console.log(err.message);
