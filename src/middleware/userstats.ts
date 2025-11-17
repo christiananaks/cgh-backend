@@ -1,5 +1,7 @@
 
-import User, { UserData } from "../models/user";
+import { HydratedDocument } from "mongoose";
+import User, { UserData } from "../models/user.js";
+
 
 
 
@@ -9,27 +11,9 @@ export default async (req: any, res: any, next: any) => {
             return next();
         }
 
-        const user = req.user as UserData;
+        const user = req.user as HydratedDocument<UserData>;
 
-        const presentDay = new Date();
-        const lastLoginDate = user.userstats.date;
-        const oneDay = 86400000;    // in milliseconds
-
-
-        if (lastLoginDate.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastLoginDate.valueOf() <= oneDay) {
-            const userstats = {
-                streakPoints: ++user.userstats.streakPoints,
-                xp: user.userstats.xp,
-                date: new Date()
-            }
-
-            user.userstats = userstats;
-            user.save();
-        } else if (lastLoginDate.toDateString() !== presentDay.toDateString()) {
-            user.userstats.date = presentDay;
-            await user.save();
-        }
-
+        await User.updateUserStats(user);
 
         next();
     } catch (err: any) {

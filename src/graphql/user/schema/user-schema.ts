@@ -1,4 +1,4 @@
-export default `
+export default `#graphql
     type Comment {
         commentId: ID!
         profilePic: String
@@ -45,7 +45,7 @@ export default `
     }
 
     type AccInfoSettings {
-        profilePic: String!
+        profilePic: String
         firstname: String!
         lastname: String!
         username: String!
@@ -102,6 +102,7 @@ export default `
     type UserOrderRefundInfo {
         amount: String!
         orderInfo: String!
+        prodId: String
         reason: String!
         otherReason: String
         imageUrls: [String!]
@@ -136,6 +137,7 @@ export default `
 
     input KycInput {
         phone: String!
+        dateOfBirth: String!
         residenceAddress: String!
         validId: ValidId!
         utilityBill: UtilityBill!
@@ -146,7 +148,7 @@ export default `
         otherReason: String
     }
 
-    type RootQuery {
+    type Query {
         showCart: [CartData!]!
         getWishlist: [Product!]!
         getCheckout: ConfirmOrder!
@@ -157,9 +159,10 @@ export default `
         getRecommendedProducts: [Product]!
         getOrderRefund(orderId: String!): GetRefundOrder!
         getUserOrderRefundInfo(orderId: String!): UserOrderRefundInfo!
+        getAuthUser(id: ID!): AuthData!
     }
 
-    type RootMutation {
+    type Mutation {
         addToCart(prodId: String!): Boolean
         removeFromCart(cartObjId: String!): Boolean
         editWishlist(prodId: String!): WishlistActionResult
@@ -170,6 +173,6 @@ export default `
         userPasswordUpdate(userQueryInput: PasswordData!): ActionStatus!
         deleteMyAcc: ActionStatus!
         createKyc(userQueryInput: KycInput!): ActionStatus!
-        postOrderRefund(orderId: String!, imageUrls: [String!], amount: String!, userQueryInput: RefundRequestInput!): ActionStatus!
+        postOrderRefund(orderId: String!, prodId: String, imageUrls: [String!], amount: String!, userQueryInput: RefundRequestInput!): ActionStatus!
     }
 `;

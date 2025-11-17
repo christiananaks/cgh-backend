@@ -1,5 +1,4 @@
 import mongoose, { Schema, Model } from "mongoose";
-import { IOrder } from "./order";
 
 
 const refundSchema = new Schema<IRefund, TRefundModel>({
@@ -28,19 +27,24 @@ const refundSchema = new Schema<IRefund, TRefundModel>({
         type: Schema.Types.ObjectId,
         required: true,
         ref: "Order",
+    },
+    prodId: {
+        type: String,
         unique: true
     },
     reason: {
         type: String,
         required: true,
         enum: [
+            'Item out of stock',
+            'Canceled order',
             'Package not received',
             'Package was damaged',
             'Others'
         ]
     },
     otherReason: String,
-    imageUrls: {
+    imageUrls: {        // customer uploaded images
         type: [
             {
                 type: String,
@@ -61,7 +65,9 @@ const refundSchema = new Schema<IRefund, TRefundModel>({
     }
 }, { timestamps: true },);
 
-refundSchema.index({ createdAt: 1 }, { partialFilterExpression: { status: 'Completed' }, expireAfterSeconds: 480 })     // 480s => 8 minutes
+// would automatically delete entry when live Date() > (createdAt + expiry duration) and status value is `Completed`
+refundSchema.index({ createdAt: 1 }, { partialFilterExpression: { status: 'Completed' }, expireAfterSeconds: 14 * 86400 })     // 14 days
+refundSchema.index({ orderInfo: 1, prodId: 1 }, { unique: true });
 
 refundSchema.static('refunds', async function (): Promise<object[]> {
     let refunds = await this.find().populate('orderInfo', 'payment');
@@ -116,22 +122,6 @@ const Refund = mongoose.model<IRefund, TRefundModel>('refund', refundSchema);
 
 export default Refund;
 
-type TProdType = {
-    prodId: string;
-    title: string;
-    imageUrl?: string;
-    desc?: string;
-    platform?: string;
-    category: string;
-    game?: string;
-    price: string;
-    duration?: string;
-    installType?: string;
-    installDuration?: string;
-    gameList?: string[];
-    homeService?: string;
-}
-
 interface TRefundModel extends Model<IRefund> {
     refunds(): Promise<object[]>;
     usersRefundInfo(id: string): Promise<object>;
@@ -142,6 +132,7 @@ interface IRefund {
     userInfo: { userId: string, email: string; username: string; };
     amount: string;
     orderInfo: any;
+    prodId: string | undefined; // when refund is for specific item from order items list
     reason: string;
     otherReason: string | undefined;
     imageUrls: string[];

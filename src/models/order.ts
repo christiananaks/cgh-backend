@@ -1,6 +1,10 @@
 import mongoose, { Model, Types, Document, HydratedDocument } from "mongoose";
-import { calPrice, resolverErrorChecker } from "../util/helper";
-import { ICurrency } from "./currency";
+
+import { calPrice, epochTime, resolverErrorChecker } from "../util/helper.js";
+import { ICurrency } from "./currency.js";
+import Refund from "./refund.js";
+import User from './user.js';
+import Currency from './currency.js';
 
 
 const Schema = mongoose.Schema;
@@ -66,7 +70,6 @@ const orderSchema = new Schema<IOrder, IOrderModel, IOrderMethods>({
         required: true,
         enum: ['Pending',
             'Confirmed payment',
-            'Processing',
             'Processed',
             'Delivered',
             'Completed',
@@ -75,12 +78,11 @@ const orderSchema = new Schema<IOrder, IOrderModel, IOrderMethods>({
             'Repair succeeded',
             'Repair failed',
             'Sent',
-            'Paid', 'Order rejected'],
+            'Order rejected', 'Out of stock'],
     },
-    reason: String,
     toExpire: {
         type: Date,
-        expires: 0
+        expires: 0  // expire on the provided date value
     }
 }, { timestamps: true });
 
@@ -132,15 +134,107 @@ orderSchema.statics.getOrder = async function (orderId: string, currency: ICurre
 }
 
 orderSchema.statics.deleteOrder = async function (orderId: string) {
-    try {
-        const order = await this.findById(orderId);
-        resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
-        await order?.deleteOne();
-    } catch (err: any) {
-        console.log(err.message);
-        throw err;
+
+    let order = await this.findById(orderId);
+    resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
+    order = order!;
+    order.deleteOne();
+    await order.save();
+
+    // create full refund after deleting order when paid order was canceled before item was delivered 
+    let isCanceledOrder = order.payment !== null && !['completed', 'delivered', 'order rejected', 'sent'].includes(order.status.toLowerCase()) === true;
+    var canceledOrderData = isCanceledOrder ? {} as { [key: string]: any } : undefined;
+    if (isCanceledOrder) {
+        const user = await User.findById(order.userInfo.userId);
+        const currency = await Currency.findOne({ currency: order.payment!.currency });
+        Object.assign(canceledOrderData!, { user: user, currency: currency });
     }
+
+    if (canceledOrderData?.user && canceledOrderData?.currency) {
+        const { user, currency } = canceledOrderData;
+        await Refund.create({
+            userInfo: {
+                userId: user.id,
+                email: user.email,
+                username: user.username
+            },
+            amount: calPrice(order.payment!.amount, currency).toString(),
+            orderInfo: new Types.ObjectId(order._id),
+            reason: 'Canceled order',
+            progress: 'Processing'
+        });
+    }
+    // ==================================================================================================== //
+
     return { success: true, message: 'Order was deleted successfully.' };
+}
+export const orderProgressOptions = {
+    shop: [
+        'sent',
+        'out of stock',
+        'confirmed payment',
+        'reject order',
+        'in transit',
+        'delivered',
+        'completed'
+    ],
+    product: [
+        'received',
+        'in transit',
+        'sent',
+        'out of stock',
+        'repair succeeded',
+        'processing repair',
+        'repair failed',
+        'reject order',
+        'delivered',
+        'completed'
+    ]
+};
+
+orderSchema.methods.updateOrderDoc = async function (orderProgress: string, orderStatus?: string) {
+
+    switch (orderProgress) {
+        case 'sent':
+            this.status = 'Sent';
+            break;
+        case 'out of stock':
+            this.status = 'Out of stock';
+            break;
+        case 'confirmed payment':
+            this.status = 'Confirmed payment';
+            break;
+        case 'reject order':
+            this.status = 'Order rejected';
+            break;
+        case 'in transit':
+            this.status = 'Processed';
+            break;
+        case 'repair succeeded':
+            this.status = 'Repair succeeded';
+            break;
+        case 'processing repair':
+            this.status = 'Repair in progress';
+            break;
+        case 'repair failed':
+            this.status = 'Repair failed';
+            break;
+        case 'received':
+            this.status = 'Received';
+            break;
+        case 'delivered':
+            this.status = 'Delivered';
+            break;
+        case 'completed':
+            this.status = 'Completed';
+            this.toExpire = new Date(Date.now() + (epochTime.milliseconds.oneDay * 14));
+            break;
+
+        default:
+            this.updateOne({ status: orderStatus });
+    }
+
+    this.save();
 }
 
 interface IOrderModel extends Model<IOrder, {}, IOrderMethods> {
@@ -152,6 +246,7 @@ interface IOrderModel extends Model<IOrder, {}, IOrderMethods> {
 
 interface IOrderMethods {
     // method type def here
+    updateOrderDoc(orderProgress: string, orderStatus?: string): Promise<void>;
 }
 
 
@@ -162,7 +257,6 @@ export interface IOrder extends IOrderProps, IOrderMethods {
     product: { orderTitle: string, orderData: IProductOrder } | undefined;
     payment: PaymentInfo | null;
     status: string;
-    reason?: string;
     toExpire?: Date;
 }
 
@@ -180,7 +274,7 @@ interface IOrderProps {
     updatedAt: Date;
 }
 
-// get from payment verification result {data.reference, channel, currency, amount}
+// for paystack payment verification result {data.reference, channel, currency, amount}
 export type PaymentInfo = {
     gateway: string;
     transRef: string;

@@ -1,9 +1,9 @@
 import { Router } from "express";
+import mongoose, { HydratedDocument } from "mongoose";
 
-import Order from "../models/order";
-import { HydratedDocument } from "mongoose";
-import { UserData } from "../models/user";
-import mongoose from "mongoose";
+import Order from "../models/order.js";
+import { UserData } from "../models/user.js";
+
 
 const router = Router();
 
@@ -66,7 +66,7 @@ router.post('/verify-offline-payment', async (req, res, next) => {
             totalAmount: paymentInfo ? paymentInfo.amount.toString() : 'N/A'
         }
         user.purchaseHistory.push(purchaseInfo);
-        await user.updateOne({ 'userstats.xp': user.userstats.xp + 5 });
+        await user.updateOne({ 'stats.xp': user.stats.xp.value + 5 });
     } catch (err: any) {
         console.log(err.message);
         next(new Error('Error: Payment verification failed!'));

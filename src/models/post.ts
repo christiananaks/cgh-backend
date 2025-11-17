@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from "mongoose";
-import User from "./user";
-import { resolverErrorChecker } from "../util/helper";
+import User from "./user.js";
+import { resolverErrorChecker } from "../util/helper.js";
 
 const postSchema = new Schema<IPost, IPostModel, IPostMethods>({
     postTitle: {

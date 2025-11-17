@@ -1,6 +1,6 @@
-import { calPrice } from '../util/helper';
-import { ICurrency } from './currency';
-import { ProductData } from './product';
+import { calPrice } from '../util/helper.js';
+import { ICurrency } from './currency.js';
+import { ProductData } from './product.js';
 
 import mongoose, { Schema, Types, Model, HydratedDocument } from 'mongoose';
 
@@ -12,7 +12,6 @@ interface CategoryModel extends Model<CategoryData, {}, {}>, CategoryData {
 export interface CategoryData {
     title: string;
     subcategoryData: Types.Map<Types.ObjectId[]>;
-    // items: Types.Array<ProductData>;
     addToCategory: (product: HydratedDocument<ProductData>) => Promise<void>;
     _doc: Omit<this, '_doc'>;
 }

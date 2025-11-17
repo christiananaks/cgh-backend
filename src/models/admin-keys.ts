@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 
+import { getDirname } from '../util/helper.js';
 
 
-export const accessKeysFile = path.join(__dirname, '../../data', 'admin-creator-key.json');
+
+export const accessKeysFile = path.join(getDirname(import.meta.url), '../../data', 'admin-creator-key.json');
 export interface AccessData {
     user: string | null,
     access: string

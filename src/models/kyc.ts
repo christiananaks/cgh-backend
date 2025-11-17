@@ -10,8 +10,13 @@ const kycSchema = new Schema<IKYC, KYCModel>({
         type: String,
         required: true
     },
+    dateOfBirth: {
+        type: String,
+        required: true
+    }
+    ,
     phone: {
-        type: String,   // if user already has phone use it here
+        type: String,
         required: true,
     },
     residenceAddress: {
@@ -72,6 +77,7 @@ export interface IKYC {
     id: string;
     userId: ObjectId;
     fullname: string;
+    dateOfBirth: string;
     phone: string;
     residenceAddress: string;
     validId: TypeValidId;

@@ -1,9 +1,9 @@
-export default `
+export default `#graphql
     type AccInfo {
         phone: String
         gamingId: GamingId
         kycStatus: String!
-        accType: String!
+        role: String!
         creator: String!
     }
 
@@ -25,7 +25,7 @@ export default `
         username: String!
         email: String!
         password: String!
-        userstats: UserStats!
+        stats: UserStats!
         accInfo: AccInfo!
         myGames: [MyGames!]!
         purchaseHistory: String
@@ -35,28 +35,33 @@ export default `
         firstName: String!
         lastName: String!
         username: String
-        profilePic: String
         email: String!
-        phone: String!
-        gamingIdHandle: String
-        platform: String
-        myGames: [MyGamesInput!]
+        phone: String
         password: String!
         confirmPassword: String!
     }
 
     type UserStats {
-        streakPoints: Int!
+        sp: Int!
         xp: Int!
+        maxXp: Int!
+        level: Int!
         date: String!
     }
 
     type AuthData {
-        userId: String!
+        userId: ID!
+        profilePic: String
+        firstName: String!
+        lastName: String!
+        username: String!
+        email: String!
+        stats: UserStats!
+        accInfo: AccInfo!
+        myGames: [MyGames!]!
+        purchaseHistory: String
         accessToken: String!
         refreshToken: String!
-        userstats: UserStats!
-        accType: String!
     }
 
     type CatData {
@@ -97,8 +102,22 @@ export default `
         acceptedTitles: [String!]
     }
 
-    type RootQuery {
+    type Token {
+        accessToken: String!
+        refreshToken: String!
+    }
+
+    type FileUploadStatus {
+        success: String!
+        message: String!
+        filesURLPath: [String!]!
+    }
+
+    scalar Upload
+
+    type Query {
         login(email: String!, password: String!): AuthData!
+        getUsernames: [String!]!
         getAllProducts: [Product!]!
         getProduct(prodId: String!): Product!
         getCatProducts(catTitle: String!): [Product!]!
@@ -116,10 +135,12 @@ export default `
         gameSwapInfo(id: ID!): GameSwap!
         getGameRent: [GameRent!]!
         gameRentInfo(id: ID!): GameRent!
+        getToken: Token!
     }
 
-    type RootMutation {
-        createUser(userQueryInput: UserInputData): UserData!
+    type Mutation {
+        createUser(userQueryInput: UserInputData): ActionStatus!
         postNewPassword(userQueryInput: NewPasswordData): ActionStatus!
+        postFilesUpload(uploadPathName: String!, files: [Upload!]!): FileUploadStatus!
     }
 `;

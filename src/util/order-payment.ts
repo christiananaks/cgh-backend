@@ -2,9 +2,9 @@ import https from 'https';
 
 import mongoose, { Types } from 'mongoose';
 
-import Order, { IOrder, IProductOrder, PaymentInfo } from '../models/order';
-import { ICheckoutInfo } from '../routes/verify-payment';
-import { ProductData } from '../models/product';
+import Order, { IOrder, IProductOrder, PaymentInfo } from '../models/order.js';
+import { ICheckoutInfo } from '../routes/verify-payment.js';
+import { ProductData } from '../models/product.js';
 
 interface IPaystackInitPay {
     status: boolean;
@@ -51,7 +51,7 @@ export async function paystackVerifyPayment(reference: string) {
             },
         });
 
-        const resData = await verify.json();
+        const resData: any = await verify.json();
 
         // filter response data
         let data: { [key: string]: any } = {};
@@ -88,12 +88,6 @@ interface IOrderArgObject {
     req: any;
 }
 
-// type TServiceProductOrder = {
-//     orderTitle: string;
-//     orderData: { orderInfo: Types.ObjectId, paymentStatus: string };
-// };
-
-// type TShopProducts = ProductData[];
 
 export type TOrderInfo = {
     orderNo: string;
@@ -146,7 +140,7 @@ export async function createOrder(orderArgObj: IOrderArgObject): Promise<TOrderI
         });
 
 
-        // send mail.........order details and order No
+        //SEND MAIL HERE.........order details and order No
 
         orderInfo = {
             orderNo: order.id + '-' + paymentData!.transRef,

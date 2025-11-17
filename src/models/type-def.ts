@@ -1,20 +1,22 @@
+import { ReadStream } from 'fs';
+
 import { HydratedDocument } from 'mongoose';
+import { Request, Response } from 'express';
 
-import { Slide } from "../models/slide";
-import { UserData, CartObject, TypeGamingId, UserDocProps } from '../models/user';
-import { TypeUtilityBill, TypeValidId } from '../models/kyc';
-import { Request } from 'express';
-import { ICurrency } from '../models/currency';
-
-
+import { Slide } from "./slide.js";
+import { UserData, CartObject, TypeGamingId, UserDocProps } from './user.js';
+import { TypeUtilityBill, TypeValidId } from './kyc.js';
+import { ICurrency } from './currency.js';
 
 
 
 export interface CtxArgs {
-    req: Request & ReqObj;
+    req: ReqObj;
+    res: Response;
 }
 
-export interface ParentObjectData {
+
+export interface InputArgs {
     id: string;
     checkoutOrderType: string;
     payOnDelivery: { status: boolean, totalAmount: string | null };
@@ -38,20 +40,26 @@ export interface ParentObjectData {
     serialNumber: string | null;
     userQueryInput: UserQueryInput;
     imageUrls: string[];
+    files: TFile[];
+    uploadPathName: string;
 }
 
+export type TFile = {
+    promise: Promise<{ createReadStream(): ReadStream; filename: string; mimetype: string; encoding: string; }>
+};
+
 type ReqObj = {
-    timedout: boolean;
+    token: string;
     guestUser: boolean;
-    // guestUser: { email: string, phone: string, address: string, cart: any[] };
     userId: string;
     isAuth: boolean;
-    accType: string;
+    role: string;
     user: HydratedDocument<UserData>;
     currency: ICurrency;
     get(header: string): string | undefined;
     isSuperReq: boolean | undefined;
-}
+} & Request;
+
 
 type AccData = {
     profilePic: string | null;
@@ -62,6 +70,7 @@ type AccData = {
 
 
 type UserQueryInput = {
+    dateOfBirth: string;
     validId: TypeValidId;
     payOnDelivery: { status: boolean, totalAmount: string | null };
     deliveryAddress: string;
@@ -79,7 +88,7 @@ type UserQueryInput = {
     username: string;
     profilePic: string | null;
     email: string;
-    phone: string | null;
+    phone: string | undefined;
     gamingIdHandle: string | null;
     platform: string;
     myGames: UserDocProps['myGames'];
@@ -88,3 +97,22 @@ type UserQueryInput = {
 };
 
 export type TActionStatus = { success: boolean, message: string };
+
+export interface IDocProps {
+    _doc: Omit<this, '_doc'>;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type TBlacklist = {
+    token: string;
+    date: string;
+};
+
+export type FileStorageArgs = {
+    uploadedFiles: Awaited<TFile['promise']>[],
+    id: string | false,
+    folderName: string,
+    pathName?: string,
+    filesURLPath: string[]
+};

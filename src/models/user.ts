@@ -1,9 +1,11 @@
-import mongoose, { Model, Types, Document, Schema } from 'mongoose';
+import mongoose, { Model, Types, Document, Schema, HydratedDocument } from 'mongoose';
 
-import { ProductData } from './product';
-import Order, { DBOrderedProds, PaymentInfo } from './order';
-import { calPrice, resolverErrorChecker } from '../util/helper';
-import { ICurrency } from './currency';
+import { ProductData } from './product.js';
+import Order, { PaymentInfo } from './order.js';
+import { calPrice, epochTime, resolverErrorChecker } from '../util/helper.js';
+import { ICurrency } from './currency.js';
+import Post, { IPost } from './post.js';
+import { IDocProps } from './type-def.js';
 
 
 // for registering static(s) method type to our custom Schema model
@@ -11,6 +13,7 @@ interface UserModel extends Model<UserData, {}, IUserMethods> {
     getUserCart(userId: string, currency: ICurrency): Promise<CartData[]>;
     getUserOrders(userId: string): Promise<object[]>;
     getUserOrderDetails(orderId: string, userId: string): Promise<object[]>;
+    updateUserStats(user: HydratedDocument<UserData>): Promise<void>;
 }
 
 interface IUserMethods {
@@ -45,62 +48,74 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
     },
     profilePic: {
         type: String,
-        required: true
     },
-    userstats: {
+    stats: {
         type: {
-            streakPoints: {
+            sp: {
                 type: Number,
+                default: 1,
                 required: true
             },
+            day: { type: { requiredDays: { type: Number, required: true }, date: { type: Date, required: true }, }, },
             xp: {
+                type: { value: { type: Number, required: true }, max: { type: Number, required: true }, date: { type: Date, required: true } },
+                required: true
+            },
+            level: {
                 type: Number,
+                default: 1,
                 required: true
             },
             date: {
                 type: Date,
+                default: Date.now(),
                 required: true
             }
         },
+        default: { day: { requiredDays: 7, date: new Date() }, xp: { value: 0, max: 100, date: new Date() } },
         required: true
     },
     refreshToken: {
         type: String,
     },
     accInfo: {
-        accType: {
-            type: String,
-            default: 'standard',
-            required: true,
-        },
-        creator: {
-            type: String,
-            default: 'user',
-            required: true,
-        },
-        phone: String,
-        gamingId: {
-            type: {
-                gamingIdHandle: {
-                    type: String,
-                    required: true
-                },
-                platform: {
-                    type: String,
-                    required: true
+        type: {
+            role: {
+                type: String,
+                default: 'standard',
+                required: true,
+            },
+            creator: {
+                type: String,
+                default: 'user',
+                required: true,
+            },
+            phone: {
+                type: String,
+            },
+            gamingId: {
+                type: {
+                    gamingIdHandle: {
+                        type: String,
+                        required: true
+                    },
+                    platform: {
+                        type: String,
+                        required: true
+                    }
                 }
+            },
+            activityReg: [
+                { type: String }
+            ],
+            kycStatus: {
+                type: String,
+                default: 'Not Initialized',
+                required: true,
+                enum: ['Not Initialized', 'Unsuccessful', 'Approved', 'Pending']
             }
         },
-        activityReg: [
-            { type: String }
-        ],
-        kycStatus: {
-            type: String,
-            default: 'Not Initialized',
-            required: true,
-            enum: ['Not Initialized', 'Unsuccessful', 'Approved', 'Pending']
-        }
-
+        required: true
     },
     myGames: [
         {
@@ -108,7 +123,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                 category: {
                     type: String,
                     required: true,
-                    enum: ['Console', 'Gaming Pc', 'Handheld/Portable']
+                    enum: ['Console', 'Gaming PC', 'Handheld/Portable']
                 },
                 names: {
                     type: Array<String>,
@@ -170,6 +185,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
     ]
 },
     {
+        timestamps: true,
         statics: {
             getUserCart: async function (userId: string, currency: ICurrency): Promise<CartData[]> {
                 const user: UserData | null = await this.findById(userId).populate('cart.productId', 'title imageUrls price');
@@ -205,9 +221,6 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                 }
                 const userOrders = orders.map(order => {
 
-                    // const dbstatusOptions = ['Pending', 'Received', 'Processing', 'Processed', 'Delivered', 'Completed'];
-                    // const values = ['Pending', 'Received', 'Processing', 'On its way!', 'Delivered', 'Completed'];
-                    // const userOrderStatus = orderProgressUpdate(undefined, order, dbstatusOptions, values, 'getUserOrders');
                     var orderStatus;
                     switch (order.status.toLowerCase()) {
                         case 'completed':
@@ -256,6 +269,41 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                     products: order?.items
                 }
                 return orderDetails;
+            },
+            updateUserStats: async (user: HydratedDocument<UserData>) => {
+                const presentDay = new Date();
+                const lastUpdated = user.stats.date;
+                const oneDay = epochTime.milliseconds.oneDay;    // in milliseconds
+
+                if (lastUpdated.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastUpdated.valueOf() <= oneDay) {
+                    user.stats.sp += 1;
+                    if ((presentDay.valueOf() - user.stats.day.date.valueOf()) / oneDay >= 28) {
+                        const value = user.stats.day.requiredDays;
+                        user.stats.day.requiredDays -= value - 1 === 0 ? 0 : 1; // deduct nothing unless `value` - 1 is greater than 0
+                        user.stats.day.date = presentDay;
+                    }
+
+                    if ((presentDay.valueOf() - user.stats.xp.date.valueOf()) / oneDay >= user.stats.day.requiredDays) {
+                        user.stats.xp.value += 1;
+                        user.stats.xp.date = presentDay;
+                    }
+
+                    if (user.stats.xp.value >= user.stats.xp.max) {
+                        user.stats.level += 1;
+                        user.stats.xp.value = 0;
+                        user.stats.xp.max += 100;
+                    }
+
+                    user.stats.date = presentDay;
+                    await user.save();
+                } else if (lastUpdated.toDateString() !== presentDay.toDateString()) {
+                    user.stats.sp = 1;
+                    user.stats.day.requiredDays = 7;
+                    user.stats.day.date = presentDay;
+                    user.stats.xp.date = presentDay;
+                    user.stats.date = presentDay;
+                    await user.save();
+                }
             }
         },
     });
@@ -311,9 +359,40 @@ userSchema.method('getUserWishlist', async function (currency: ICurrency): Promi
 });
 
 
+userSchema.pre('deleteOne', { document: true, query: false }, async function (next) {
+    try {
+
+        const userId = this.id;
+        if (!userId) {
+            return next();
+        }
+
+        const postsToSave: mongoose.Document<unknown, {}, IPost>[] = [];
+        const posts = await Post.find({ comments: { $ne: [] } });  // finds all comments that are not empty
+
+        // where no post was found
+        if (1 > posts.length) {
+            return next();
+        }
+        posts.forEach((post) => {
+            post.comments.forEach((comm) => {
+
+                if (comm.userInfo.toString() === userId) {
+                    post.comments.pull(comm._id);
+                    postsToSave.push(post);
+                }
+            });
+        });
+        await Post.bulkSave(postsToSave);
+    } catch (err: any) {
+        console.log('user prehook Error: ', err.message);
+        next(new Error('An error occurred processing deletion of related objects'));
+    }
+});
+
 type wishlistObj = {
     productId: Types.ObjectId;
-    _id?: Types.ObjectId
+    _id?: Types.ObjectId;
 };
 
 type wishlistActionResult = {
@@ -336,16 +415,19 @@ export type CartData = {
 };
 
 export type UserStats = {
-    streakPoints: number;
-    xp: number;
+    sp: number;
+    day: { requiredDays: number; date: Date; }  // date must be be updated whenever we update day field or reset sp
+    xp: { value: number; max: number; date: Date; }; // date must be updated whenever we update xp field or reset sp
+    level: number;
     date: Date;
 }
 
+
 export type TypeGamingId = { gamingIdHandle: string | null, platform: string };
 export type AccountInfo = {
-    accType: string | undefined;
+    role: string | undefined;
     creator: string | undefined;
-    phone: string | null;
+    phone: string | undefined;
     gamingId: TypeGamingId | null;
     activityReg: string[];
     kycStatus?: string;
@@ -372,23 +454,17 @@ export interface UserDocProps {
     purchaseHistory: TypePurchaseHistory[];
     wishlist: Types.Array<wishlistObj>;
     cart: Types.Array<CartObject>;
-    _doc: Omit<this, '_doc'>;    // Omitting `this` interface to prevent object circular reference
 }
 
-export interface UserData extends UserDocProps, Document, IUserMethods {
+export interface UserData extends UserDocProps, IDocProps, Document, IUserMethods {
     firstName: string;
     lastName: string;
     username: string;
     email: string;
     password: string;
-    userstats: UserStats;
+    stats: UserStats;
     accInfo: AccountInfo;
 };
 
 export default mongoose.model<UserData, UserModel>("User", userSchema);
-
-
-
-
-
 

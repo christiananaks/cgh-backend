@@ -1,6 +1,8 @@
 import path from 'path';
 import fs from 'fs';
 
+import { getDirname } from '../util/helper.js';
+
 
 export interface Slide {
     id: string;
@@ -11,7 +13,7 @@ export interface Slide {
     createdAt: string;
 }
 
-const fileUrlPath = path.join(__dirname, '../../data', 'slides.json');
+const fileUrlPath = path.join(getDirname(import.meta.url), '../../data', 'slides.json');
 
 
 export const getSlidesFromFile = () => {
@@ -44,7 +46,7 @@ export class NewSlide {
         this.desc = desc;
         this.imageUrl = imageUrl;
         this.creator = createdBy;
-        this.createdAt = new Date().toLocaleTimeString() + ' ' + new Date().toDateString();
+        this.createdAt = new Date().toISOString();
     }
 
     save() {

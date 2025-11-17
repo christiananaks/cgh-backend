@@ -13,7 +13,7 @@ const resetPasswordSchema = new Schema<IResetPassword, Model<IResetPassword>>({
     created: {
         type: Date,
         default: Date.now(),
-        expires: '1h'
+        expires: '10m'
     }
 });
 

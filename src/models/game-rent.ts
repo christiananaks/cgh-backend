@@ -1,9 +1,9 @@
 import mongoose, { Model, Schema } from "mongoose";
-import { TActionStatus } from "../graphql/types-def";
-import Categories from "./categories";
-import Product from "./product";
-import { resolverErrorChecker, validatePriceFormat } from "../util/helper";
-import { clearImage } from "../util/file-storage";
+import { TActionStatus } from "./type-def.js";
+import Categories from "./category.js";
+import Product from "./product.js";
+import { resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { clearImage } from "../util/file-storage.js";
 
 const gameRentSchema = new Schema<IGameRent, IGameRentModel>({
     title: {
