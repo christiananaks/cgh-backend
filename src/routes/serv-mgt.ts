@@ -1,8 +1,8 @@
 import { Router } from "express";
 
-import ServerMnt from "../models/serv-mnt";
-import { resolverErrorChecker } from "../util/helper";
-import User from "../models/user";
+import ServerMnt from "../models/serv-mnt.js";
+import { resolverErrorChecker } from "../util/helper.js";
+import User from "../models/user.js";
 
 
 

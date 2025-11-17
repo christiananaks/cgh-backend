@@ -1,6 +1,6 @@
 
 import { HydratedDocument } from "mongoose";
-import User, { UserData } from "../models/user";
+import User, { UserData } from "../models/user.js";
 
 
 

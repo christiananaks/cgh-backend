@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 
-import User from '../models/user';
-import Options from '../models/options';
-import Currency from '../models/currency';
-import { blacklistToken } from '../util/helper';
+import User from '../models/user.js';
+import Options from '../models/options.js';
+import Currency from '../models/currency.js';
+import { blacklistToken } from '../util/helper.js';
 
 
 export default async (req: any, res: any, next: any) => {
@@ -25,12 +25,13 @@ export default async (req: any, res: any, next: any) => {
         }
 
         req.currency = currency;
-
         // special case where we want non registered user to be able to make payment
         if (req.body.query && (req.body.query as string).includes('postCheckout')) {
             req.guestUser = true;
             return next();
         }
+
+        if (req.body.query && (req.body.query as string).includes('getToken')) return next();
 
         if (!authHeader) {
             req.isAuth = false;

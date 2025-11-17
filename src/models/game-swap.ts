@@ -1,10 +1,9 @@
 import mongoose, { Model, Schema } from "mongoose";
-import { TActionStatus } from "./type-def";
-import { allGenre, resolverErrorChecker, validatePriceFormat } from "../util/helper";
-import validator from "validator";
-import Product, { ProductData } from "./product";
-import Categories from "./category";
-import { clearImage } from "../util/file-storage";
+
+import { allGenre, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { TActionStatus } from "./type-def.js";
+import Product from "./product.js";
+import { clearImage } from "../util/file-storage.js";
 
 
 const gameSwapSchema = new Schema<IGameSwap, IGameSwapModel>({

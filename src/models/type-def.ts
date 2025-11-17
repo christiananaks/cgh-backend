@@ -1,20 +1,22 @@
+import { ReadStream } from 'fs';
+
 import { HydratedDocument } from 'mongoose';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 
-import { Slide } from "./slide";
-import { UserData, CartObject, TypeGamingId, UserDocProps } from './user';
-import { TypeUtilityBill, TypeValidId } from './kyc';
-import { ICurrency } from './currency';
-
-
+import { Slide } from "./slide.js";
+import { UserData, CartObject, TypeGamingId, UserDocProps } from './user.js';
+import { TypeUtilityBill, TypeValidId } from './kyc.js';
+import { ICurrency } from './currency.js';
 
 
 
 export interface CtxArgs {
     req: ReqObj;
+    res: Response;
 }
 
-export interface ParentObjectData {
+
+export interface InputArgs {
     id: string;
     checkoutOrderType: string;
     payOnDelivery: { status: boolean, totalAmount: string | null };
@@ -38,8 +40,13 @@ export interface ParentObjectData {
     serialNumber: string | null;
     userQueryInput: UserQueryInput;
     imageUrls: string[];
+    files: TFile[];
+    uploadPathName: string;
 }
 
+export type TFile = {
+    promise: Promise<{ createReadStream(): ReadStream; filename: string; mimetype: string; encoding: string; }>
+};
 
 type ReqObj = {
     token: string;
@@ -100,4 +107,12 @@ export interface IDocProps {
 export type TBlacklist = {
     token: string;
     date: string;
+};
+
+export type FileStorageArgs = {
+    uploadedFiles: Awaited<TFile['promise']>[],
+    id: string | false,
+    folderName: string,
+    pathName?: string,
+    filesURLPath: string[]
 };

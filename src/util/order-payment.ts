@@ -2,9 +2,9 @@ import https from 'https';
 
 import mongoose, { Types } from 'mongoose';
 
-import Order, { IOrder, IProductOrder, PaymentInfo } from '../models/order';
-import { ICheckoutInfo } from '../routes/verify-payment';
-import { ProductData } from '../models/product';
+import Order, { IOrder, IProductOrder, PaymentInfo } from '../models/order.js';
+import { ICheckoutInfo } from '../routes/verify-payment.js';
+import { ProductData } from '../models/product.js';
 
 interface IPaystackInitPay {
     status: boolean;

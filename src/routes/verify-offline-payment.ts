@@ -1,9 +1,9 @@
 import { Router } from "express";
+import mongoose, { HydratedDocument } from "mongoose";
 
-import Order from "../models/order";
-import { HydratedDocument } from "mongoose";
-import { UserData } from "../models/user";
-import mongoose from "mongoose";
+import Order from "../models/order.js";
+import { UserData } from "../models/user.js";
+
 
 const router = Router();
 

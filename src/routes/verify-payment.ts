@@ -2,10 +2,11 @@ import { NextFunction, Response } from "express";
 
 
 
-import { paystackVerifyPayment, createOrder, TOrderInfo } from "../util/order-payment";
-import Order, { IOrder, PaymentInfo } from "../models/order";
-import Product from "../models/product";
-import mongoose, { HydratedDocument, Types } from "mongoose";
+import mongoose, { HydratedDocument } from "mongoose";
+
+import { paystackVerifyPayment, createOrder, TOrderInfo } from "../util/order-payment.js";
+import Order, { IOrder, PaymentInfo } from "../models/order.js";
+import Product from "../models/product.js";
 
 
 type OrderedProd = {

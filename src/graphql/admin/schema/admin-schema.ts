@@ -1,4 +1,4 @@
-export default `
+export default `#graphql
     type Slide {
         id: ID!
         title: String!
@@ -41,7 +41,7 @@ export default `
         title: String!
         category: String!
         subcategory: String!
-        imageUrls: [String!]!
+        imageUrls: [String!]
         condition: String!
         desc: String
         price: Float!
@@ -233,7 +233,7 @@ export default `
 
     input RepairInput {
         title: String!
-        imageUrl: String!
+        imageUrl: String
         category: String!
         game: [String!]!
         desc: String
@@ -249,7 +249,7 @@ export default `
 
     input TrendingGameData {
         title: String!
-        imageUrl: String!
+        imageUrl: String
         desc: String
         rating: Int!
         platform: String
@@ -270,7 +270,7 @@ export default `
 
     input GameSwapInput {
         title: String!
-        imageUrl: String!
+        imageUrl: String
         platform: String!
         condition: String!
         genre: [String!]!
@@ -282,14 +282,14 @@ export default `
 
     input GameRentInput {
         title: String!
-        imageUrl: String!
+        imageUrl: String
         category: String!
         subCategory: String!
         info: String!
         rate: Float!
     }
 
-    type RootQuery {
+    type Query {
         slides: [Slide!]!
         getAccessKeys: AccessKeysInfo!
         getAdminUsers: [UserCard!]!
@@ -308,7 +308,7 @@ export default `
         getRefundInfo(id: ID!): RefundInfo!
     }
 
-    type RootMutation {
+    type Mutation {
         createAdminUser(userQueryInput: UserInputData): UserData!
         createSlide(adminQueryInput: SlideData): Slide!
         createOrEditCategory(id: String, categoryTitle: String, subcategoryTitles: [String!]! ): ActionStatus!

@@ -1,10 +1,10 @@
 import mongoose, { Model, Types, Document, HydratedDocument } from "mongoose";
 
-import { calPrice, resolverErrorChecker } from "../util/helper";
-import { ICurrency } from "./currency";
-import Refund from "./refund";
-import User from './user';
-import Currency from './currency';
+import { calPrice, resolverErrorChecker } from "../util/helper.js";
+import { ICurrency } from "./currency.js";
+import Refund from "./refund.js";
+import User from './user.js';
+import Currency from './currency.js';
 
 
 const Schema = mongoose.Schema;

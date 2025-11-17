@@ -1,86 +1,53 @@
+import http from 'http';
+
 // @ts-ignore
 import graphiql from 'express-graphiql-explorer';
 import express, { NextFunction, Request, Response } from 'express';
-import multer from 'multer';
 import mongoose from 'mongoose';
-import { createHandler } from 'graphql-http/lib/use/express';
-import bodyParser from 'body-parser';
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@as-integrations/express4';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import { graphqlUploadExpress } from 'graphql-upload-ts';
+
+import userstats from './middleware/userstats.js';
+import execSchema from './graphql/merged-schema.js';
+import auth from './middleware/auth.js';
+import servMgt from './routes/serv-mgt.js';
+import postMail from './routes/mailer.js';
+import serverStatus from './middleware/server-mgt-status.js';
+import verifyPayment from './routes/verify-payment.js';
+import verifyOfflinePayment from './routes/verify-offline-payment.js';
+import getNewPassword from './routes/get-new-password.js';
+import getFile from './routes/get-file.js';
+import createPodOrder, { createReqOrder } from './routes/create-order.js';
+import User from './models/user.js';
+import { createSuperUser } from './util/helper.js';
+import { CtxArgs } from './models/type-def.js';
 
 
-import userstats from './middleware/userstats';
-import mergedSchema from './graphql/merged-schema';
-import auth from './middleware/auth';
-import mergedResolvers from './graphql/merged-resolvers';
-import getToken from './routes/get-token';
-import servMgt from './routes/serv-mgt';
-import postMail from './routes/mailer';
-import serverStatus from './middleware/server-mgt-status';
-import fileUpload from './routes/file-upload';
-import verifyPayment from './routes/verify-payment';
-import verifyOfflinePayment from './routes/verify-offline-payment';
-import getNewPassword from './routes/get-new-password';
-import getFile from './routes/get-file';
-import createPodOrder, { createReqOrder } from './routes/create-order';
-import { fileFilter, docFileFilter, fileStorage } from './util/file-storage';
-import { paths } from './util/path-linker';
-import User from './models/user';
-import { createSuperUser } from './util/helper';
-
-/************     CHANGES:     ************/
 const app = express();
+const httpServer = http.createServer(app);
+const apolloServer = new ApolloServer({
+    schema: execSchema,
+    plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+    csrfPrevention: false,
+    formatError: (formattedError, err) => {
 
-// 5 image slots for various form fields for product bulk image upload
-const imageFields = [
-    { name: 'slot0', maxCount: 1 },
-    { name: 'slot1', maxCount: 1 },
-    { name: 'slot2', maxCount: 1 },
-    { name: 'slot3', maxCount: 1 },
-    { name: 'slot4', maxCount: 1 }
-];
+        console.log(formattedError);
 
-const kycDocFields = [
-    { name: 'validId', maxCount: 1 },
-    { name: 'utilityBill', maxCount: 1 },
-];
-
-app.use(bodyParser.json());
-// handles timeout
-app.use((req, res, next) => {
-
-    req.prependListener('resume', () => {
-        console.log('server request resume');
-    });
-
-    next();
+        return {
+            message: formattedError.message,
+            code: formattedError.extensions?.code,
+            httpStatus: formattedError.extensions?.httpStatus || 500,
+            path: formattedError.path
+        }
+    }
 });
 
 
-// GameSwap | GameRent => '/game-image' // GameDownloads | GameRepair => '/product-image'
-app.use('/image-upload', multer({ storage: fileStorage, fileFilter: fileFilter }).single('image'), fileUpload);  // executed on every multipart/form-data enctype incoming req
+app.use(express.json());
 
-app.use('/upload-screenshot', multer({ dest: paths.miscDir, fileFilter: fileFilter }).single('misc'), (req, res, next) => {
-    if (!req.file) {
-        return next(new Error('Error: File upload error!'));
-    }
-    res.status(200).json({ message: 'File uploaded successfully.', filePath: req.file.path });
-});
-
-// bulk image uploads
-app.use('/image-uploads', (req, res, next) => {
-    const validEndpoints = ['/product-images', '/image-guides'];
-    if (!validEndpoints.includes(req.url)) {
-        const error = new Error(`Invalid route parameter! route endpoint params are:- ${validEndpoints.join(', ')}`);
-        return next(error);
-    }
-    next();
-}, multer({ storage: fileStorage, fileFilter: fileFilter }).fields(imageFields), fileUpload);
-
-
-app.use('/document-uploads', multer({ storage: fileStorage, fileFilter: docFileFilter }).fields(kycDocFields), fileUpload);
-
-// '/uploads-misc/post-refund-uploads' , and propective misc uploads endpoints  // accepts both image and doc file types
-app.use('/misc-uploads', multer({ storage: fileStorage, fileFilter: docFileFilter }).array('misc', 3), fileUpload); // endpoint for multiple miscellaneous files uploads such as transfer screenshots, images for help requests, etc.
-
+await apolloServer.start();
 
 app.use('/uploads', getFile);
 
@@ -93,7 +60,7 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(getToken);
+
 app.use(getNewPassword);
 app.use(auth);
 app.use('/mailer', postMail);
@@ -108,36 +75,19 @@ app.use(createPodOrder);
 app.use('/graphiql', graphiql({
     graphQlEndpoint: '/graphql',
     defaultQuery: `query Query {
-login(email: "test@test.com", password: "Number01") {
+login(email: "test@test.com", password: "${process.env.DEV_PASSWORD}") {
 accessToken
 role
 }
 }`
 }));
 
-app.all(['/cgh-backend-gql', '/graphql'], (req: any, res, next) => {
-
-    return createHandler({
-
-        schema: mergedSchema,
-        rootValue: mergedResolvers,
-        context: { req, res },  // implicitly context: {req: {}, res: {} }, stores the req or res obj val using its identifier as key
-        formatError(err: any) { // originalError => errors thrown by you or third party packages: mongoose, etc
-            if (!err.originalError) {
-                console.log('unhandled Error caught by graphql: ', err.message);
-                return err; // unhandled errors caught by graphql. // e.g syntax errors in query from client-side, wrong query structure,etc.
-            }
-
-            const data = err.originalError.data;
-            const code = err.originalError.statusCode || 500;
-            const message = err.originalError.message || 'An error occurred :(';
-            console.log('graphql formatError: ', err.originalError.message);
-
-            return { errorData: data, code: code, message: message }    // `errorData` would not be included in response object if `data` is undefined
-        },
-    })(req, res, next);
-},
+app.all(
+    '/cgh-backend-gql',
+    graphqlUploadExpress({ maxFileSize: 10000000, maxFiles: 10 }),
+    expressMiddleware(apolloServer, { context: async ({ req, res }) => ({ req: req as CtxArgs['req'], res }) }),
 );
+
 
 app.use((error: { message: string, statusCode: number }, req: Request, res: Response, next: NextFunction) => {
     console.log('Caught by App level REST MW error handler: \n', `\r${error.message}`);
@@ -150,10 +100,11 @@ app.use((error: { message: string, statusCode: number }, req: Request, res: Resp
 
 mongoose.connect(`mongodb+srv://${process.env.CONNECTION_STRING}?retryWrites=true`).then((conn) => {
     console.log('connected!');
-    const server = app.listen(8080);
+    const server = app.listen(process.env.PORT || 8080);
+
     User.findOne({ 'accInfo.role': 'superuser' }).then(user => {
-        if (!user && process.env.SP_PASSWORD) {
-            createSuperUser(process.env.SP_PASSWORD).catch(err => console.log(err.toString()));
+        if (!user && process.env.SU_PASSWORD) {
+            createSuperUser(process.env.SU_PASSWORD).catch(err => console.log(err.toString()));
             console.log('superuser was created successfully');
             return;
         }

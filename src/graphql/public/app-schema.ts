@@ -1,4 +1,4 @@
-export default `
+export default `#graphql
     type AccInfo {
         phone: String
         gamingId: GamingId
@@ -61,6 +61,7 @@ export default `
         myGames: [MyGames!]!
         purchaseHistory: String
         accessToken: String!
+        refreshToken: String!
     }
 
     type CatData {
@@ -101,7 +102,20 @@ export default `
         acceptedTitles: [String!]
     }
 
-    type RootQuery {
+    type Token {
+        accessToken: String!
+        refreshToken: String!
+    }
+
+    type FileUploadStatus {
+        success: String!
+        message: String!
+        filesURLPath: [String!]!
+    }
+
+    scalar Upload
+
+    type Query {
         login(email: String!, password: String!): AuthData!
         getUsernames: [String!]!
         getAllProducts: [Product!]!
@@ -121,10 +135,12 @@ export default `
         gameSwapInfo(id: ID!): GameSwap!
         getGameRent: [GameRent!]!
         gameRentInfo(id: ID!): GameRent!
+        getToken: Token!
     }
 
-    type RootMutation {
+    type Mutation {
         createUser(userQueryInput: UserInputData): ActionStatus!
         postNewPassword(userQueryInput: NewPasswordData): ActionStatus!
+        postFilesUpload(uploadPathName: String!, files: [Upload!]!): FileUploadStatus!
     }
 `;

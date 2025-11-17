@@ -1,11 +1,11 @@
 import mongoose, { Model, Types, Document, Schema, HydratedDocument } from 'mongoose';
 
-import { ProductData } from './product';
-import Order, { DBOrderedProds, PaymentInfo } from './order';
-import { calPrice, resolverErrorChecker } from '../util/helper';
-import { ICurrency } from './currency';
-import Post, { IPost } from './post';
-import { IDocProps } from './type-def';
+import { ProductData } from './product.js';
+import Order, { PaymentInfo } from './order.js';
+import { calPrice, resolverErrorChecker } from '../util/helper.js';
+import { ICurrency } from './currency.js';
+import Post, { IPost } from './post.js';
+import { IDocProps } from './type-def.js';
 
 
 // for registering static(s) method type to our custom Schema model
@@ -275,12 +275,11 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                 const lastUpdated = user.stats.date;
                 const oneDay = 86400000;    // in milliseconds
 
-
                 if (lastUpdated.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastUpdated.valueOf() <= oneDay) {
                     user.stats.sp += 1;
                     if ((presentDay.valueOf() - user.stats.day.date.valueOf()) / oneDay >= 28) {
                         const value = user.stats.day.requiredDays;
-                        user.stats.day.requiredDays -= value - 1 === 0 ? 0 : 1; // deduct nothing unless value - 1 is greater than 0
+                        user.stats.day.requiredDays -= value - 1 === 0 ? 0 : 1; // deduct nothing unless `value` - 1 is greater than 0
                         user.stats.day.date = presentDay;
                     }
 
@@ -288,6 +287,13 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                         user.stats.xp.value += 1;
                         user.stats.xp.date = presentDay;
                     }
+
+                    if (user.stats.xp.value >= user.stats.xp.max) {
+                        user.stats.level += 1;
+                        user.stats.xp.value = 0;
+                        user.stats.xp.max += 100;
+                    }
+
                     user.stats.date = presentDay;
                     await user.save();
                 } else if (lastUpdated.toDateString() !== presentDay.toDateString()) {
@@ -296,13 +302,6 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                     user.stats.day.date = presentDay;
                     user.stats.xp.date = presentDay;
                     user.stats.date = presentDay;
-                    await user.save();
-                }
-
-                if (user.stats.xp.value >= user.stats.xp.max) {
-                    user.stats.level += 1;
-                    user.stats.xp.value = 0;
-                    user.stats.xp.max += 100;
                     await user.save();
                 }
             }

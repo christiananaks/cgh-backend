@@ -1,15 +1,18 @@
 import fs from 'fs/promises';
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { NextFunction, Request, Response } from 'express';
 
 
-import User, { UserData, UserStats } from '../models/user';
-import { IServMnt } from '../models/serv-mnt';
-import { ICurrency } from '../models/currency';
-import { paths } from './path-linker';
-import { TBlacklist } from '../models/type-def';
+import User, { UserData, UserStats } from '../models/user.js';
+import { IServMnt } from '../models/serv-mnt.js';
+import { ICurrency } from '../models/currency.js';
+import { TBlacklist } from '../models/type-def.js';
+import { GraphQLError } from 'graphql';
 
 
 export let allGenre = new Set(['Action', 'Action-Adventure', 'Role-Playing Games (RPGs)', 'Simulation', 'Sports', 'Versus', 'Adventure', 'Racing']);
@@ -24,26 +27,45 @@ export const activityReg = [
 ];
 
 
+export const getDirname = (fileUrl: string) => dirname(fileURLToPath(fileUrl));
 
+export const paths = {
+    imageDir: path.join(getDirname(import.meta.url), '../../uploads/images'),
+    documentDir: path.join(getDirname(import.meta.url), '../../uploads/documents'),
+    miscDir: path.join(getDirname(import.meta.url), '../../uploads/misc'),
+    data: path.join(getDirname(import.meta.url), '../../data')
+}
+
+export const tokenDuration = { access: '3h', refresh: '5h' };
 /**
  * Generates accessToken and refreshToken for auth user.
  * @param user 
  * @returns { accessToken: string, refreshToken: string } 
  */
 export function createTokens(user: UserData): { accessToken: string, refreshToken: string } {
+
     const accessToken = jwt.sign({
         userId: user.id,
         email: user.email,
-        role: user.accInfo.role
-    }, `${process.env.ACCESS_TOKEN_PRIVATE_KEY}`, { expiresIn: '3h' });
+        role: user.accInfo.role,
+    }, `${process.env.ACCESS_TOKEN_PRIVATE_KEY}`, { expiresIn: tokenDuration.access });
 
     const refreshToken = jwt.sign({
-        userId: user.id,
-    }, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`, { expiresIn: '5h' });
+        expires: new Date(getExpiryTime(tokenDuration.refresh))
+    }, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`, { expiresIn: tokenDuration.refresh });
 
 
     return { accessToken, refreshToken };
 }
+
+export function getExpiryTime(duration: string) {
+
+    const options = new Map([['d', 86400000], ['m', 60000], ['h', 3600000]]);
+    const period = duration[duration.length - 1];
+    const result = Date.now() + parseInt(duration) * options.get(period)!;
+    return result;
+}
+
 
 export async function blacklistToken(token: string, verify = false) {
     const filePath = paths.data + '/token-blacklist.json';
@@ -59,7 +81,7 @@ export async function blacklistToken(token: string, verify = false) {
     }
 
     const oneDay = 86400000;   // in milliseconds
-    // where the latest token date is atleast 24hrs old and array contains over 999 tokens we clear array
+    // where the latest token date is at least 24hrs old and array contains over 999 tokens we clear array
     if (blacklist.length > 999 && new Date(blacklist[blacklist.length - 1].date).valueOf() + oneDay < Date.now()) {
         blacklist = [];
     }
@@ -74,9 +96,6 @@ export async function blacklistToken(token: string, verify = false) {
 /** Checks if numbers length after decimal point is greater than 2 */
 export const validatePriceFormat = (price: number): boolean => {
     if (price.toString().includes('.') && price.toString().split('.')[1].length > 2) {
-        // const error: {[key: string]: any} = new Error('Invalid price format.\nToo many numbers after decimal point :(');
-        // error.statusCode = 422;
-        // throw error;
         return true;
     }
     return false;
@@ -92,6 +111,20 @@ export const calPrice = (price: number, currency: ICurrency): number => {
 }
 
 
+export class GraphQLCustomError extends GraphQLError {
+    constructor(message: string, httpStatus = 500) {
+        super(message, { extensions: { httpStatus } });
+    }
+}
+
+export class CustomError extends Error {
+    statusCode: number;
+    constructor(message?: string, statusCode?: number) {
+        super(message || 'An error ocurred.');
+        this.statusCode = statusCode || 500;
+    }
+}
+
 export type ErrData = {
     condition: boolean;
     message?: string;
@@ -100,7 +133,7 @@ export type ErrData = {
 /** error checker function  */
 export function resolverErrorChecker(args: ErrData): void {
     if (args.condition) {
-        throw new CustomError(args.message, args.code || 500);
+        throw new GraphQLCustomError(args.message || 'An error occurred!', args.code);
     }
 }
 
@@ -131,33 +164,6 @@ export async function loginReqAccRole(req: any, mgtState: IServMnt) {
 }
 
 
-/** Custom middleware timeout */
-export function mwTimeout(duration: number) {
-    const timeoutMW = async (req: Request, res: Response, next: NextFunction) => {
-        const timeout = setTimeout(() => {
-            const error: any = new Error('request time out.');
-            error.statusCode = 408;
-            next(error);
-        }, duration);
-
-        res.on('finish', () => {
-            clearTimeout(timeout);
-            console.log('cleared timeout....');
-        });
-        next();
-    }
-    return timeoutMW;
-}
-
-
-export class CustomError extends Error {
-    statusCode: number;
-    constructor(message?: string, statusCode?: number) {
-        super(message || 'An error ocurred.');
-        this.statusCode = statusCode || 500;
-    }
-}
-
 
 export async function createSuperUser(password: string) {
     const hashPw = await bcrypt.hash(password, 12);
@@ -166,7 +172,7 @@ export async function createSuperUser(password: string) {
         firstName: process.env.FIRST_NAME || 'super',
         lastName: process.env.LAST_NAME || 'user',
         username: 'superuser' + date.toISOString().split('.')[1],
-        email: process.env.EMAIL,
+        email: process.env.SU_EMAIL,
         password: hashPw,
         accInfo: {
             role: 'superuser',

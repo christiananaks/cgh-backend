@@ -1,13 +1,18 @@
 import path from 'path';
 import fs from 'fs';
-import crypto from 'crypto';
+import { rmdir } from 'fs/promises';
 
-import multer from 'multer';
 
-import { paths } from './path-linker';
+import { S3Client } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+
+import { GraphQLCustomError, resolverErrorChecker } from './helper.js';
+import { getDirname } from './helper.js';
+import { FileStorageArgs } from '../models/type-def.js';
+
 
 export function clearImage(filePath: string) {
-    filePath = path.join(__dirname, '../..', filePath);
+    filePath = path.join(getDirname(import.meta.url), '../..', filePath);
     fs.unlink(filePath, err => {
         if (err) {
             console.log('error deleting image:', err?.message);
@@ -17,191 +22,107 @@ export function clearImage(filePath: string) {
     });
 };
 
-export function bulkImageStorage(req: any, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void, folder: string) {
 
-    // editing a product image
-    if (req.query.imageId) {
-        return fs.readdir(`uploads/images/products/${req.query.imageId}`, (err, images) => {
-            if (err) {
-                console.log(err.message);
-                return cb(err, `uploads/images/products/${req.query.imageId}`);
-            }
-            // if file exists remove file before setting new file storage destination
-            images.forEach(image => {
-                if (image.startsWith(file.fieldname)) {
-                    console.log(true, 'remove file: ', image);
-                    fs.unlinkSync(`uploads/images/products/${req.query.imageId}/` + image);
-                }
-            });
-            cb(null, `uploads/images/products/${req.query.imageId}`);
-        });
-    }
-    //========================================================================//
+export const s3FileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/`;
 
-    try {
-        // process bulk image uploads from index 1 file in the array // ensures files from the req.files are stored at same folder as the first file.
-        if (req.imageId && folder === 'products') {
-            return cb(null, `uploads/images/products/${req.imageId}`);
-        } else if (req.imageId && folder === 'guides') {
-            return cb(null, `uploads/images/${folder}/${req.imageId}`);
-        } else if (req.imageId && folder === 'misc') {
-            return cb(null, `uploads/${folder}/${req.imageId}`);
-        }
-        //========================================================================//
-
-        // sets new folder name for new image
-        let foldername: string | undefined = undefined;
-        switch (folder) {
-            case "guides":
-                foldername = req.query.subcategory;
-                break;
-            case "products":
-                const genId = crypto.randomBytes(24);
-                foldername = genId.toString('hex');
-                break;
-            case "misc":
-                foldername = crypto.randomBytes(24).toString('hex');
-                break;
-        }
-        //========================================================================//
-
-        const folderPath = (folder === 'misc') ? paths.miscDir + `/${foldername}` : paths.imageDir + `/${folder}/${foldername}`;
-        req.imageId = foldername;
-
-        fs.mkdir(folderPath, { recursive: true }, (err) => {
-
-            if (err) {
-                console.log(err.message);
-                return cb(err, `uploads/` + (folder === 'misc') ? `${folder}/${foldername}` : `images/${folder}/${foldername}`);
-            }
-
-            if (folder === 'misc') {
-                return cb(null, `uploads/${folder}/${foldername}`);
-            }
-
-            cb(null, `uploads/images/${folder}/${foldername}`);
-        });
-
-    } catch (err: any) {
-        console.log(err.message);
-        cb(err, `uploads/images/${folder}/${req.imageId}`);
-    }
-}
-
-
-export function bulkDocStorage(req: any, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) {
-    const foldername = req.query.userId;
-    const folderPath = paths.documentDir + `/KYC/${foldername}`;
-
-
-    if (!fs.existsSync(folderPath)) {
-        return fs.mkdir(folderPath, { recursive: true }, (err) => {
-            if (err) {
-                console.log(err.message);
-                return cb(err, `uploads/documents/KYC/${foldername}`);
-            }
-
-            cb(null, `uploads/documents/KYC/${foldername}`);
-        });
-    }
-
-
-    const existingDocs = fs.readdirSync(folderPath);
-    existingDocs.forEach(doc => {
-        if (doc.startsWith(file.fieldname)) {
-            fs.unlinkSync(`uploads/documents/KYC/${foldername}/` + doc);
-        }
-    });
-
-    return cb(null, `uploads/documents/KYC/${foldername}`);
-}
-
-export const fileStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-
-        // strip query parameters from request url endpoint  -> req.url.split('?')[0]
-        switch (req.url.split('?')[0]) {
-
-            case '/slide-image':
-                cb(null, 'uploads/images/slides');
-                break;
-            case '/profile-image':
-                cb(null, 'uploads/images/profiles');
-                break;
-            case '/product-image':
-                cb(null, 'uploads/images/products');
-                break;
-            case '/product-images':
-                bulkImageStorage(req, file, cb, 'products');
-                break;
-            case '/KYC-documents':
-                bulkDocStorage(req, file, cb);
-                break;
-            case '/image-guides':
-                bulkImageStorage(req, file, cb, 'guides');
-                break;
-            case '/game-image':
-                cb(null, 'uploads/images/games');
-                break;
-            case '/post-refund-uploads':
-                bulkImageStorage(req, file, cb, 'misc');
-                break;
-            default:
-                cb(null, 'uploads/images');
-        }
-    },
-    filename: (req, file, cb) => {
-
-        switch (req.url) {
-            case '/product-images':
-                return cb(null, `${file.fieldname}-` + file.originalname);
-            case `/product-images?imageId=${req.query[`${Object.keys(req.query)[0]}`]}`:
-                return cb(null, `${file.fieldname}-` + file.originalname);
-            case `/KYC-documents?userId=${req.query[`${Object.keys(req.query)[0]}`]}`:
-                return cb(null, `${file.fieldname}-` + file.originalname);
-            case `/image-guides?subcategory=${req.query[`${Object.keys(req.query)[0]}`]}`:
-                return cb(null, `${file.fieldname}-` + file.originalname);
-        }
-        cb(null, new Date().toISOString() + '-' + file.originalname);
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
     }
 });
+export async function s3Upload(args: FileStorageArgs) {
+    const { uploadedFiles, id, folderName, filesURLPath } = args;
 
-export const fileFilter = (req: Request | any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    try {
+        for (var i = 0; i < uploadedFiles.length; i++) {
+            const { filename, mimetype, encoding, createReadStream } = uploadedFiles[i];
+            const stream = createReadStream();
 
-    if (file.mimetype === 'image/png' || file.mimetype === 'image/jpg' || file.mimetype === 'image/jpeg') {
-        cb(null, true);
-    } else {
-        const error = new Error('Unsupported file type!');
-        cb(error);
+            const s3Params = {
+                Bucket: process.env.AWS_BUCKET_NAME!,
+                Key: 'to be generated',
+                Body: stream,
+                ContentType: mimetype
+            };
 
-        // remove empty folder that was created
-        if (req.url.split('?')[0] === '/product-images' && fs.existsSync(paths.imageDir + `/products/${req.imageId}`)) {
-            fs.rm(paths.imageDir + `/products/${req.imageId}`, { recursive: true }, (err) => {
-                if (err) {
-                    console.log('Error deleting empty dir: ', err.message);
-                    cb(err);
-                    return;
-                }
-            });
+            console.log(`index: ${i} =>`, filename, mimetype, encoding);
+
+            const filenameOnly = filename.substring(0, filename.lastIndexOf('.'));
+            const fileExt = filename.replaceAll(filenameOnly, '').trim();
+
+            if (i === 0 && ['product', 'KYC'].includes(folderName)) {
+                resolverErrorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
+
+                const p = `${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
+                s3Params.Key = p;
+                const uploader = new Upload({ client: s3Client, params: s3Params });
+                const data = await uploader.done();
+                filesURLPath.push(data.Location!);
+                continue;
+
+            } else if (['product', 'KYC'].includes(folderName)) {
+
+                const p = `${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
+                s3Params.Key = p;
+                const uploader = new Upload({ client: s3Client, params: s3Params });
+                const data = await uploader.done();
+                filesURLPath.push(data.Location!);
+                continue;
+            }
+
+            const p = `${folderName}/${i}-${new Date().toISOString()}${filename}`;
+            s3Params.Key = p;
+            const uploader = new Upload({ client: s3Client, params: s3Params });
+            const data = await uploader.done();
+            console.log(data.Key);
+
+            filesURLPath.push(data.Location!);
+
         }
+    } catch (err: any) {
+        if (err instanceof GraphQLCustomError) {
+            throw err;
+        }
+        throw new GraphQLCustomError(`Error uploading file!\nInfo=> ${err.message}`);
     }
 }
 
-export const docFileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+export async function localUpload(args: FileStorageArgs) {
+    const { uploadedFiles, id, folderName, pathName, filesURLPath } = args;
 
-    if (file.fieldname === 'validId' && file.mimetype === 'application/pdf' ||
-        file.fieldname === 'validId' && file.mimetype === 'image/png' ||
-        file.fieldname === 'validId' && file.mimetype === 'image/jpg' ||
-        file.fieldname === 'validId' && file.mimetype === 'image/jpeg') {
-        return cb(null, true);
-    }
-    else if (file.fieldname === 'utilityBill' && file.mimetype === 'application/pdf') {
-        return cb(null, true);
-    } else if (file.fieldname === 'misc' && ['application/pdf', 'image/png', 'image/jpg', 'image/jpeg'].includes(file.mimetype)) {
-        return cb(null, true);
-    }
-    else {
-        const error = new Error('Unsupported file type!');
-        cb(error);
+    for (var i = 0; i < uploadedFiles.length; i++) {
+        const { filename, mimetype, encoding, createReadStream } = uploadedFiles[i];
+        const stream = createReadStream();
+
+        console.log(`index: ${i} =>`, filename, mimetype, encoding);
+
+        await new Promise(async (resolve, reject) => {
+            const filenameOnly = filename.substring(0, filename.lastIndexOf('.'));
+            const fileExt = filename.replaceAll(filenameOnly, '').trim();
+
+            if (i === 0 && ['product', 'KYC'].includes(folderName)) {
+                resolverErrorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
+                // if id folder exists, it is removed and recreated to ensure we don't keep old files for that product
+                await rmdir(`${pathName}/${folderName}/${id}`).catch((err) => undefined);
+                fs.mkdirSync(`${pathName}/${folderName}/${id}`);
+
+                const p = `${pathName}/${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
+                stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
+                filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+                return;
+            } else if (['product', 'KYC'].includes(folderName)) {
+
+                const p = `${pathName}/${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
+                stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
+                filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+                return;
+            }
+
+            const p = `${pathName}/${folderName}/${i}-${new Date().toISOString()}${filename}`;
+            stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
+            filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+        });
     }
 }

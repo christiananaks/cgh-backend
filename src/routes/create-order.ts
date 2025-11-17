@@ -1,8 +1,8 @@
+import mongoose, { Types } from "mongoose";
 import { NextFunction, Request, Response, Router } from "express";
 
-import Order, { IProductOrder } from "../models/order";
-import mongoose, { Types } from "mongoose";
-import { ICheckoutInfo } from "./verify-payment";
+import Order, { IProductOrder } from "../models/order.js";
+import { ICheckoutInfo } from "./verify-payment.js";
 
 const router = Router();
 

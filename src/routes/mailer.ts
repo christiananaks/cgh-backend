@@ -1,9 +1,9 @@
 
 import express from 'express';
 
-import { CustomError, resolverErrorChecker } from '../util/helper';
-import { CtxArgs } from '../models/type-def';
-import Mailing from '../models/mailing';
+import { CustomError, resolverErrorChecker } from '../util/helper.js';
+import { CtxArgs } from '../models/type-def.js';
+import Mailing from '../models/mailing.js';
 
 const router = express.Router();
 

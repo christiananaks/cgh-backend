@@ -1,5 +1,5 @@
-import ServerMnt from "../models/serv-mnt";
-import { resolverErrorChecker, loginReqAccRole } from "../util/helper";
+import ServerMnt from "../models/serv-mnt.js";
+import { resolverErrorChecker, loginReqAccRole } from "../util/helper.js";
 
 
 export default async (req: any, res: any, next: any) => {

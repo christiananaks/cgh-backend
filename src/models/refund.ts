@@ -1,5 +1,4 @@
 import mongoose, { Schema, Model } from "mongoose";
-import { IOrder } from "./order";
 
 
 const refundSchema = new Schema<IRefund, TRefundModel>({

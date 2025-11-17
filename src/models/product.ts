@@ -1,6 +1,6 @@
 import mongoose, { HydratedDocument, Model, Document, Schema } from "mongoose";
-import { ICurrency } from "./currency";
-import { calPrice } from "../util/helper";
+import { ICurrency } from "./currency.js";
+import { calPrice } from "../util/helper.js";
 
 
 interface ProductModel extends Model<ProductData> {

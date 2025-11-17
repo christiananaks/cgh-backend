@@ -1,11 +1,12 @@
 import mongoose, { Model, Schema } from "mongoose";
 import nodemailer from 'nodemailer';
 import { HydratedDocument } from "mongoose";
-import SMTPTransport from "nodemailer/lib/smtp-transport";
+
+import SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
 import nodemailerSendgrid from "nodemailer-sendgrid";
 
-import { IDocProps } from "./type-def";
-import user from "./user";
+import { IDocProps } from "./type-def.js";
+import user from "./user.js";
 
 const mailingSchema = new Schema<IMailing, IMailingModel>({
     info: {

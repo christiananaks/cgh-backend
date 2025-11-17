@@ -1,4 +1,4 @@
-export default `
+export default `#graphql
     type Comment {
         commentId: ID!
         profilePic: String
@@ -148,7 +148,7 @@ export default `
         otherReason: String
     }
 
-    type RootQuery {
+    type Query {
         showCart: [CartData!]!
         getWishlist: [Product!]!
         getCheckout: ConfirmOrder!
@@ -162,7 +162,7 @@ export default `
         getAuthUser(id: ID!): AuthData!
     }
 
-    type RootMutation {
+    type Mutation {
         addToCart(prodId: String!): Boolean
         removeFromCart(cartObjId: String!): Boolean
         editWishlist(prodId: String!): WishlistActionResult
