@@ -1,4 +1,5 @@
 import mongoose, { Schema, Model } from "mongoose";
+import { epochTime, isProductionEnv } from "../util/helper.js";
 
 
 const refundSchema = new Schema<IRefund, TRefundModel>({
@@ -66,8 +67,8 @@ const refundSchema = new Schema<IRefund, TRefundModel>({
 }, { timestamps: true },);
 
 // would automatically delete entry when live Date() > (createdAt + expiryTime) and status value is `Completed`
-refundSchema.index({ createdAt: 1 }, { partialFilterExpression: { status: 'Completed' }, expireAfterSeconds: 480 })     // 480s => 8 minutes
-refundSchema.index({ orderInfo: 1, prodId: 1 }, { unique: true });
+refundSchema.index({ createdAt: 1 }, { partialFilterExpression: { status: 'Completed' }, expireAfterSeconds: isProductionEnv ? epochTime.seconds.oneDay * 21 : 480 })     // 480s => 8 minutes
+refundSchema.index({ orderInfo: 1, prodId: 1 }, { unique: true }); // both values are unique and a new document should not be created with the same values of and existing doc
 
 refundSchema.static('refunds', async function (): Promise<object[]> {
     let refunds = await this.find().populate('orderInfo', 'payment');

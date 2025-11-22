@@ -2,7 +2,7 @@ import mongoose, { Model, Types, Document, Schema, HydratedDocument } from 'mong
 
 import { ProductData } from './product.js';
 import Order, { PaymentInfo } from './order.js';
-import { calPrice, resolverErrorChecker } from '../util/helper.js';
+import { calPrice, epochTime, resolverErrorChecker } from '../util/helper.js';
 import { ICurrency } from './currency.js';
 import Post, { IPost } from './post.js';
 import { IDocProps } from './type-def.js';
@@ -273,7 +273,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
             updateUserStats: async (user: HydratedDocument<UserData>) => {
                 const presentDay = new Date();
                 const lastUpdated = user.stats.date;
-                const oneDay = 86400000;    // in milliseconds
+                const oneDay = epochTime.milliseconds.oneDay;
 
                 if (lastUpdated.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastUpdated.valueOf() <= oneDay) {
                     user.stats.sp += 1;
