@@ -17,7 +17,7 @@ import Categories from "../../models/category.js";
 import Post from "../../models/post.js";
 import User, { AccountInfo } from "../../models/user.js";
 import AdminKey, { AccessData, accessKeysFile } from '../../models/admin-keys.js';
-import { GraphQLCustomError, activityReg, calPrice, createTokens, resUserstats, resolverErrorChecker } from '../../util/helper.js';
+import { GraphQLCustomError, activityReg, calPrice, createTokens, isProductionEnv, resUserstats, resolverErrorChecker } from '../../util/helper.js';
 import ResetPassword from '../../models/reset-password.js';
 import TrendingGames from '../../models/trending-games.js';
 import GameDownload from '../../models/game-download.js';
@@ -27,7 +27,7 @@ import GameSwap from '../../models/game-swap.js';
 import Mailing from '../../models/mailing.js';
 import { paths } from '../../util/helper.js';
 import Kyc from '../../models/kyc.js';
-import { localUpload, s3Upload } from '../../util/file-storage.js';
+import { localUpload, s3UploadObject } from '../../util/file-storage.js';
 
 
 
@@ -553,7 +553,6 @@ export default {
             // prodId or KYCId
             const id = uploadPathName.split('/').length > 2 && uploadPathName.split('/')[2];
 
-
             resolverErrorChecker({ condition: !validPaths.get(fileKind) || !validPaths.get(fileKind)?.name.includes(folderName), message: 'Error: Invalid "uploadPathName"!' });
             const pathName = validPaths.get(fileKind)!.dir;
 
@@ -566,10 +565,10 @@ export default {
 
 
             // process files and store them
-            if (process.env.NODE_ENV !== 'production') {
+            if (!isProductionEnv) {
                 await localUpload({ id, pathName, folderName, filesURLPath, uploadedFiles });
             } else {
-                await s3Upload({ id, folderName, filesURLPath, uploadedFiles });
+                await s3UploadObject({ id, folderName, filesURLPath, uploadedFiles });
             }
 
             // for uploads that receive ID in <uploadPathName> query input, we update the respective documents with uploaded file url path

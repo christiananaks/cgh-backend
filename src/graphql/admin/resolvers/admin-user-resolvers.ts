@@ -6,11 +6,11 @@ import mongoose, { HydratedDocument } from 'mongoose';
 
 import { CtxArgs, InputArgs } from "../../../models/type-def.js";
 import User, { UserData } from "../../../models/user.js";
-import { resolverErrorChecker, orderEnums, validatePriceFormat, getDirname } from "../../../util/helper.js";
+import { resolverErrorChecker, orderEnums, validatePriceFormat, getDirname, isProductionEnv } from "../../../util/helper.js";
 import { paths } from '../../../util/helper.js';
 import AdminKey from "../../../models/admin-keys.js";
 import { NewSlide, getSlidesFromFile } from "../../../models/slide.js";
-import { clearImage } from "../../../util/file-storage.js";
+import { clearImage, s3DeleteObject } from "../../../util/file-storage.js";
 import Product, { ProductData } from '../../../models/product.js';
 import Categories from '../../../models/category.js';
 import { AdminArgs } from './super-user-resolver.js';
@@ -373,16 +373,22 @@ export default {
                 error.statusCode = 404;
                 throw error;
             }
-
             await foundProduct.deleteOne();
             if (foundProduct.imageUrls.length > 0) {
-                // clearImage(foundProduct.imageUrls[0]);
-                const prodImageDir = foundProduct.imageUrls[0].substring(0, foundProduct.imageUrls[0].lastIndexOf('/'));
-                fs.rm(`${prodImageDir}`, { recursive: true, force: true }, (err) => {
-                    if (err) {
-                        console.log(err.message);
-                    }
-                })
+
+                const fileKey = foundProduct!.imageUrls[0].split('.com/')[1];
+                const prefix = fileKey.substring(0, fileKey.lastIndexOf("/")) + "/";
+                if (isProductionEnv) {
+                    await s3DeleteObject(prefix);
+                }
+                else {
+                    const prodImageDir = foundProduct.imageUrls[0].substring(0, foundProduct.imageUrls[0].lastIndexOf('/'));
+                    fs.rm(`${prodImageDir}`, { recursive: true, force: true }, (err) => {
+                        if (err) {
+                            console.log(err.message);
+                        }
+                    });
+                }
             }
 
             const foundCategory = await Categories.findOne({ title: foundProduct.category });
@@ -640,7 +646,10 @@ export default {
                 await foundKyc.deleteOne();
             }
 
-            if (foundUser.profilePic) {
+            if (foundUser.profilePic && isProductionEnv) {
+                const fileKey = foundUser.profilePic.split('.com/')[1];
+                await s3DeleteObject(fileKey);
+            } else if (foundUser.profilePic && !isProductionEnv) {
                 clearImage(foundUser.profilePic);
             }
 
@@ -1040,7 +1049,10 @@ export default {
 
             try {
                 const gameRepair = await GameRepair.findByIdAndDelete(id);
-                if (gameRepair && gameRepair.imageUrl) {
+                if (gameRepair?.imageUrl && isProductionEnv) {
+                    const fileKey = gameRepair.imageUrl.split('.com/')[1];
+                    await s3DeleteObject(fileKey);
+                } else if (gameRepair && gameRepair.imageUrl) {
                     clearImage(gameRepair.imageUrl);
                 }
 

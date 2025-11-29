@@ -273,7 +273,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
             updateUserStats: async (user: HydratedDocument<UserData>) => {
                 const presentDay = new Date();
                 const lastUpdated = user.stats.date;
-                const oneDay = epochTime.milliseconds.oneDay;    // in milliseconds
+                const oneDay = epochTime.milliseconds.oneDay;
 
                 if (lastUpdated.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastUpdated.valueOf() <= oneDay) {
                     user.stats.sp += 1;

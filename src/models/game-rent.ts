@@ -2,8 +2,8 @@ import mongoose, { Model, Schema } from "mongoose";
 import { TActionStatus } from "./type-def.js";
 import Categories from "./category.js";
 import Product from "./product.js";
-import { resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
-import { clearImage } from "../util/file-storage.js";
+import { isProductionEnv, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { clearImage, s3DeleteObject } from "../util/file-storage.js";
 
 const gameRentSchema = new Schema<IGameRent, IGameRentModel>({
     title: {
@@ -77,7 +77,12 @@ gameRentSchema.static('delGameRent', async function (id: string) {
 
     await Product.findOneAndUpdate({ category: foundGameRent!.category, subcategory: foundGameRent!.subCategory, title: foundGameRent!.title }, { rent: false });
 
-    clearImage(foundGameRent!.imageUrl);
+    if (isProductionEnv) {
+        const fileKey = foundGameRent!.imageUrl.split('.com/')[1];
+        await s3DeleteObject(fileKey);
+    } else {
+        clearImage(foundGameRent!.imageUrl);
+    }
 
     return { success: true, message: `GameRent: ${foundGameRent!.title} deleted successfully!` };
 

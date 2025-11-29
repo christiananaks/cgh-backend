@@ -1,6 +1,6 @@
 import mongoose, { Model, Types, Document, HydratedDocument } from "mongoose";
 
-import { calPrice, epochTime, resolverErrorChecker } from "../util/helper.js";
+import { calPrice, epochTime, isProductionEnv, resolverErrorChecker } from "../util/helper.js";
 import { ICurrency } from "./currency.js";
 import Refund from "./refund.js";
 import User from './user.js';
@@ -227,7 +227,7 @@ orderSchema.methods.updateOrderDoc = async function (orderProgress: string, orde
             break;
         case 'completed':
             this.status = 'Completed';
-            this.toExpire = new Date(Date.now() + (epochTime.milliseconds.oneDay * 14));
+            this.toExpire = new Date(isProductionEnv ? Date.now() + epochTime.milliseconds.oneDay * 14 : Date.now() + 600000);
             break;
 
         default:

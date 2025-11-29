@@ -5,7 +5,6 @@ import path from 'path';
 
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { NextFunction, Request, Response } from 'express';
 
 
 import User, { UserData, UserStats } from '../models/user.js';
@@ -28,7 +27,7 @@ export const activityReg = [
 
 
 export const getDirname = (fileUrl: string) => dirname(fileURLToPath(fileUrl));
-
+export const isProductionEnv = process.env.NODE_ENV === 'production';
 export const paths = {
     imageDir: path.join(getDirname(import.meta.url), '../../uploads/images'),
     documentDir: path.join(getDirname(import.meta.url), '../../uploads/documents'),
@@ -36,7 +35,7 @@ export const paths = {
     data: path.join(getDirname(import.meta.url), '../../data')
 }
 
-export const tokenDuration = { access: '24h', refresh: '7d' };
+export const tokenDuration = { access: isProductionEnv ? '24h' : '3h', refresh: isProductionEnv ? '7d' : '5h' };
 /**
  * Generates accessToken and refreshToken for auth user.
  * @param user 
