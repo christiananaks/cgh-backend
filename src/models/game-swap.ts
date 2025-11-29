@@ -1,9 +1,9 @@
 import mongoose, { Model, Schema } from "mongoose";
 
-import { allGenre, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { allGenre, isProductionEnv, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
 import { TActionStatus } from "./type-def.js";
 import Product from "./product.js";
-import { clearImage } from "../util/file-storage.js";
+import { clearImage, s3DeleteObject } from "../util/file-storage.js";
 
 
 const gameSwapSchema = new Schema<IGameSwap, IGameSwapModel>({
@@ -118,7 +118,12 @@ gameSwapSchema.statics.delGameSwap = async function (id) {
     await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: deletedDoc!.platform, title: deletedDoc!.title }, { swap: false });
     /***************************************** */
 
-    clearImage(deletedDoc!.imageUrl);
+    if (isProductionEnv) {
+        const fileKey = deletedDoc!.imageUrl.split('.com/')[1];
+        await s3DeleteObject(fileKey);
+    } else {
+        clearImage(deletedDoc!.imageUrl);
+    }
 
     return { success: true, message: `Successfully deleted GameSwap: ${deletedDoc?.title}!` };
 }
