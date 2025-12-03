@@ -6,8 +6,6 @@ import { getDirname } from "../util/helper.js";
 
 
 const router = Router();
-// nested router.get handlers matches the path after parent path from app.METHOD from start to end, in other words its strips off the parent path before matching string 
-// thus slices the path after parent to end of url
 
 router.use('/images/slides', express.static(path.join(getDirname(import.meta.url), '../../uploads/images', `slides`)));
 
