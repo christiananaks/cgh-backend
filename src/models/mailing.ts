@@ -3,7 +3,6 @@ import nodemailer from 'nodemailer';
 import { HydratedDocument } from "mongoose";
 
 import SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
-import nodemailerSendgrid from "nodemailer-sendgrid";
 
 import { IDocProps } from "./type-def.js";
 import user from "./user.js";
@@ -48,9 +47,15 @@ export interface IMailing extends IDocProps {
 
 
 mailingSchema.statics.sendEmail = async function (email: string, subject: string, htmlBody: string): Promise<SMTPTransport.SentMessageInfo> {
-    const transport = nodemailer.createTransport(nodemailerSendgrid({
-        apiKey: `${process.env.SENDGRID_KEY}`
-    }));
+    const transport = nodemailer.createTransport({
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        secure: false,
+        auth: {
+            user: 'apikey',
+            pass: `${process.env.SENDGRID_KEY}`
+        }
+    });
 
     return await transport.sendMail({
         from: `${process.env.COMPANY_EMAIL}`,

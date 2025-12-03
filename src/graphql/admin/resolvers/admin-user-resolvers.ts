@@ -6,7 +6,7 @@ import mongoose, { HydratedDocument } from 'mongoose';
 
 import { CtxArgs, InputArgs } from "../../../models/type-def.js";
 import User, { UserData } from "../../../models/user.js";
-import { resolverErrorChecker, orderEnums, validatePriceFormat, getDirname, isProductionEnv } from "../../../util/helper.js";
+import { resolverErrorChecker, orderEnums, validatePriceFormat, getDirname, isProductionEnv, GraphQLCustomError } from "../../../util/helper.js";
 import { paths } from '../../../util/helper.js';
 import AdminKey from "../../../models/admin-keys.js";
 import { NewSlide, getSlidesFromFile } from "../../../models/slide.js";
@@ -531,20 +531,10 @@ export default {
                 message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
             });
 
-
-            // temporary check, for keep path compliant to the general imageUrl path structure
-            let adjustedImagePath = '';
-            if (!adminQueryInput.imageUrl!.startsWith('images/slides')) {
-                adjustedImagePath = 'images/slides/' + adminQueryInput.imageUrl;
-            } else {
-                adjustedImagePath = adminQueryInput.imageUrl!;
-            }
-
-
             const title = adminQueryInput.title.trim();
-            const image = adjustedImagePath;
-            const description = adminQueryInput.desc ? adminQueryInput.desc.trim() : null;
-            const creator = user.username; // set the name of logged in req.user
+            const image = adminQueryInput.imageUrl;
+            const description = adminQueryInput.desc?.trim() || null;
+            const creator = user.username;
 
             resolverErrorChecker({
                 condition: validator.isEmpty(title) || !validator.isLength(title, { min: 5, max: 50 }),
@@ -563,13 +553,6 @@ export default {
 
             const slides = await NewSlide.fetchSlides();
             if (slides.length > 0) {
-                // for (const slide of slides) {
-                //     if (slide.title === title || slide.desc === description) {
-                //         const error: {[key:string]: any} = new Error('Slide already exists!');
-                //         error.statusCode = 409;
-                //         throw error;
-                //     }
-                // }
                 slides.forEach((slide) => {
                     if (slide.title === title || slide.desc === description) {
                         const error: { [key: string]: any } = new Error('Slide already exists!');
@@ -579,7 +562,6 @@ export default {
                 })
             }
 
-
             const slide = new NewSlide(title, description, image, creator);
 
             await slide.save();
@@ -588,21 +570,19 @@ export default {
         },
         deleteSlide: async (parent: any, { id }: AdminArgs, { req }: CtxArgs) => {
 
-            const file = path.join(getDirname(import.meta.url), '../../../data', 'slides.json');
-
             let savedSlides = await getSlidesFromFile();
-            // find the imageUrl
-            const imageFile = savedSlides.find((s) => s.id == id)?.imageUrl;
+            const imageUrl = savedSlides.find((s) => s.id == id)?.imageUrl;
 
-            if (imageFile) {
-                clearImage(imageFile);
+            if (imageUrl) {
+                const fileKey = isProductionEnv && imageUrl.split('.com/')[1];
+                isProductionEnv ? await s3DeleteObject(fileKey as string) : clearImage(imageUrl);
             } else {
-                console.log('image path arg is invalid!');
-                return false; // only delete successfully if imageUrl exists in the file
+                throw new GraphQLCustomError('Error: Object does not exist in slides.json', 404);
             }
 
-            // delete entry from fileDB
             savedSlides = savedSlides.filter((s) => s.id !== id);
+
+            const file = path.join(getDirname(import.meta.url), '../../../data', 'slides.json');
 
             // write the modified file data
             fs.writeFile(file, JSON.stringify(savedSlides), err => console.log('write after deleting: ', err));

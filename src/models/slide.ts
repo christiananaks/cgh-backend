@@ -60,8 +60,6 @@ export class NewSlide {
                     return resolve('success');
                 })
             });
-        }).then(res => {
-            console.log('Write to file: ', res);
         }).catch(err => {
             console.log('Write error:  ', err.message);
             throw err;

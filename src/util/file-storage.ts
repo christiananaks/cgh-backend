@@ -10,13 +10,13 @@ import { GraphQLCustomError, resolverErrorChecker, getDirname } from './helper.j
 import { FileStorageArgs } from '../models/type-def.js';
 
 
-export const s3FileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/`;
+export const s3FileUrl = `https://${process.env.GS_AWS_BUCKET_NAME}.s3.${process.env.GS_AWS_REGION}.amazonaws.com/`;
 
 const s3Client = new S3Client({
-    region: process.env.AWS_REGION,
+    region: process.env.GS_AWS_REGION,
     credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
+        accessKeyId: process.env.GS_AWS_ACCESS_KEY!,
+        secretAccessKey: process.env.GS_AWS_SECRET_ACCESS_KEY!
     }
 });
 
@@ -34,10 +34,10 @@ export function clearImage(filePath: string) {
 
 export async function s3DeleteObject(fileKey: string) {
     try {
-        // deletes folder i.e all contents with the given object keys
+        // deletes folder i.e all contents in folder with the given object keys
         if (fileKey.endsWith('/')) {
             const listParams = {
-                Bucket: process.env.AWS_BUCKET_NAME,
+                Bucket: process.env.GS_AWS_BUCKET_NAME,
                 Prefix: fileKey // e.g product/ID/
             };
 
@@ -49,7 +49,7 @@ export async function s3DeleteObject(fileKey: string) {
             }
 
             const deleteParams = {
-                Bucket: process.env.AWS_BUCKET_NAME,
+                Bucket: process.env.GS_AWS_BUCKET_NAME,
                 Delete: { Objects: data.Contents.map(obj => ({ Key: obj.Key })) }
             };
 
@@ -58,7 +58,7 @@ export async function s3DeleteObject(fileKey: string) {
             return;
         }
 
-        const params = { Key: fileKey, Bucket: process.env.AWS_BUCKET_NAME };
+        const params = { Key: fileKey, Bucket: process.env.GS_AWS_BUCKET_NAME };
         const command = new DeleteObjectCommand(params);
         await s3Client.send(command);
     } catch (err: any) {
@@ -76,7 +76,7 @@ export async function s3UploadObject(args: FileStorageArgs) {
             const stream = createReadStream();
 
             const s3Params = {
-                Bucket: process.env.AWS_BUCKET_NAME!,
+                Bucket: process.env.GS_AWS_BUCKET_NAME!,
                 Key: 'to be generated',
                 Body: stream,
                 ContentType: mimetype

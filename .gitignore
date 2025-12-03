@@ -6,3 +6,6 @@ data
 dist
 nodemon.json
 playground.js
+.env
+serverless.yml
+.serverless
