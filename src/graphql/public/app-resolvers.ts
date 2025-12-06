@@ -37,7 +37,7 @@ interface CatParentData {
 
 export default {
     Query: {
-        login: async (parent: any, { email, password }: InputArgs, { req, res }: CtxArgs, { }, { }) => {
+        login: async (parent: any, { email, password }: InputArgs, { req, res }: CtxArgs, { }) => {
 
             const enteredEmail = email.trim().toLowerCase();
             const enteredPassword = password;
@@ -113,7 +113,7 @@ export default {
 
         },
 
-        resetPassword: async (parent: any, { email }: InputArgs, { }: CtxArgs,) => {
+        resetPassword: async (parent: any, { email }: InputArgs, { }: CtxArgs) => {
             const userEmail = email.trim().toLowerCase();
             resolverErrorChecker({
                 condition: !validator.isEmail(userEmail, {
