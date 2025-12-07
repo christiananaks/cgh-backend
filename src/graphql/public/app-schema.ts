@@ -136,6 +136,8 @@ export default `#graphql
         getGameRent: [GameRent!]!
         gameRentInfo(id: ID!): GameRent!
         getToken: Token!
+        getInAppNotice: InAppNotice
+        slides: [Slide!]!
     }
 
     type Mutation {

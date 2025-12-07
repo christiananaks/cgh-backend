@@ -1,6 +1,6 @@
 import path from 'path';
+import { rmdir, unlink } from 'fs/promises';
 import fs from 'fs';
-import { rmdir } from 'fs/promises';
 
 
 import { S3Client, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
@@ -20,20 +20,20 @@ const s3Client = new S3Client({
     }
 });
 
-export function clearImage(filePath: string) {
+export async function clearImage(filePath: string) {
     filePath = path.join(getDirname(import.meta.url), '../..', filePath);
-    fs.unlink(filePath, err => {
-        if (err) {
-            console.log('error deleting image:', err?.message);
-            return;
-        }
+    try {
+        await unlink(filePath);
         console.log('removed file: %s', filePath.substring(filePath.lastIndexOf('/') + 1));
-    });
+    } catch (err: any) {
+        console.log(err?.message);
+    }
 };
 
 
 export async function s3DeleteObject(fileKey: string) {
     try {
+        fileKey = decodeURIComponent(fileKey);
         // deletes folder i.e all contents in folder with the given object keys
         if (fileKey.endsWith('/')) {
             const listParams = {
@@ -82,7 +82,6 @@ export async function s3UploadObject(args: FileStorageArgs) {
                 ContentType: mimetype
             };
 
-            console.log(`index: ${i} =>`, filename, mimetype, encoding);
 
             const filenameOnly = filename.substring(0, filename.lastIndexOf('.'));
             const fileExt = filename.replaceAll(filenameOnly, '').trim();
@@ -112,7 +111,6 @@ export async function s3UploadObject(args: FileStorageArgs) {
             s3Params.Key = p;
             const uploader = new Upload({ client: s3Client, params: s3Params });
             const data = await uploader.done();
-            console.log(data.Key);
 
             filesURLPath.push(data.Location!);
 

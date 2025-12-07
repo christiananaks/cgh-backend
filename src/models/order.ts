@@ -177,7 +177,6 @@ export const orderProgressOptions = {
         'in transit',
         'delivered',
         'completed'
-
     ],
     product: [
         'received',

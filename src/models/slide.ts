@@ -1,10 +1,10 @@
 import path from 'path';
 import fs from 'fs';
 
-import { getDirname } from '../util/helper.js';
+import { GraphQLCustomError, getDirname, isProductionEnv } from '../util/helper.js';
 
 
-export interface Slide {
+export interface ISlide {
     id: string;
     title: string;
     desc: string | null;
@@ -13,33 +13,16 @@ export interface Slide {
     createdAt: string;
 }
 
-const fileUrlPath = path.join(getDirname(import.meta.url), '../../data', 'slides.json');
+export const slidesFilePath = path.join(getDirname(import.meta.url), isProductionEnv ? '../../data' : '../../data/dev', 'slides.json');
 
 
-export const getSlidesFromFile = () => {
-    return new Promise<NewSlide[]>((resolve, reject) => {
-        fs.readFile(fileUrlPath, (err, fileData: Buffer) => {
-            if (!err) {
-                resolve(JSON.parse(fileData.toString()));
-            }
-            else if (err.message.includes('no such file or directory')) {
-                resolve([]);
-            }
-            else {
-                reject(err);
-            }
-        });
-    });
-}
-
-
-export class NewSlide {
-    id: Slide["id"];
-    title: Slide['title'];
-    desc: Slide['desc'];
-    imageUrl: Slide['imageUrl'];
-    creator: Slide['creator'];
-    createdAt: Slide['createdAt'];
+export class Slide {
+    id: ISlide["id"];
+    title: ISlide['title'];
+    desc: ISlide['desc'];
+    imageUrl: ISlide['imageUrl'];
+    creator: ISlide['creator'];
+    createdAt: ISlide['createdAt'];
     constructor(title: string, desc: string | null, imageUrl: string, createdBy: string) {
         this.id = new Date().toISOString().split('.')[1];
         this.title = title;
@@ -49,26 +32,50 @@ export class NewSlide {
         this.createdAt = new Date().toISOString();
     }
 
-    save() {
-        return getSlidesFromFile().then((slidesArray: NewSlide[]) => {
+    async save() {
+        try {
+            const slidesArray = await Slide.fetchSlides();
             slidesArray.push(this);
             return new Promise((resolve, reject) => {
-                fs.writeFile(fileUrlPath, JSON.stringify(slidesArray), err => {
+                fs.writeFile(slidesFilePath, JSON.stringify(slidesArray), err => {
                     if (err) {
                         return reject(err);
                     }
-                    return resolve('success');
-                })
+                    return resolve(true);
+                });
             });
-        }).catch(err => {
-            console.log('Write error:  ', err.message);
-            throw err;
-        });
-
+        } catch (err: any) {
+            console.log(err.message);
+            throw new GraphQLCustomError(`Error encountered saving to file.\n${err.message}`);
+        }
     }
 
     static async fetchSlides() {
-        const slidesArray = await getSlidesFromFile();
+        const slidesArray = await new Promise<Slide[]>((resolve, reject) => {
+            fs.readFile(slidesFilePath, (err, fileData: Buffer) => {
+                if (!err) {
+                    resolve(JSON.parse(fileData.toString()));
+                }
+                else if (err.message.includes('no such file or directory')) {
+                    resolve([]);
+                }
+                else {
+                    reject(err);
+                }
+            });
+        });
         return slidesArray;
+    }
+
+    static clearSlidesFile(): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+            fs.writeFile(slidesFilePath, JSON.stringify([]), err => {
+                if (err) {
+                    console.log(err.message);
+                    return reject(new GraphQLCustomError(`Operation failed!\n${err.message}`));
+                }
+                resolve(true);
+            });
+        });
     }
 }

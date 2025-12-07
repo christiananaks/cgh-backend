@@ -84,7 +84,7 @@ role
 }));
 
 app.all(
-    '/cgh-backend-gql',
+    ['/cgh-backend-gql', '/graphql'],
     graphqlUploadExpress({ maxFileSize: 10000000, maxFiles: 10 }),
     expressMiddleware(apolloServer, { context: async ({ req, res }) => ({ req: req as CtxArgs['req'], res }) }),
 );
