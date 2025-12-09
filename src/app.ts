@@ -46,9 +46,9 @@ const apolloServer = new ApolloServer({
 });
 
 
-app.use(express.json());
-
 await apolloServer.start();
+
+app.use(express.json());
 
 app.use('/uploads', getFile);
 
@@ -76,7 +76,7 @@ app.use(createPodOrder);
 app.use('/graphiql', graphiql({
     graphQlEndpoint: '/graphql',
     defaultQuery: `query Query {
-login(email: "test@test.com", password: "${process.env.DEV_PASSWORD}") {
+login(email: "test@test.com", password: "") {
 accessToken
 role
 }

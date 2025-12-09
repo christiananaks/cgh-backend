@@ -23,7 +23,7 @@ import GameDownload from '../../models/game-download.js';
 import { ICurrency } from '../../models/currency.js';
 import GameRent from '../../models/game-rent.js';
 import GameSwap from '../../models/game-swap.js';
-import Mailing from '../../models/mailing.js';
+import Mailing, { primarySender } from '../../models/mailing.js';
 import { paths } from '../../util/helper.js';
 import Kyc from '../../models/kyc.js';
 import { localUpload, s3UploadObject } from '../../util/file-storage.js';
@@ -149,7 +149,7 @@ const Query = {
         `;
 
         try {
-            await Mailing.sendEmail(foundUser!.email, 'Password Reset', mailBody);
+            await Mailing.sendEmail(primarySender, foundUser!.email, 'Password Reset', mailBody);
         } catch (err: any) {
             console.log(err);
             return { success: false, message: 'Password reset not successful :(' };
@@ -466,7 +466,7 @@ const Mutation = {
                 accInfo.role = 'admin';
             }
 
-            Mailing.sendEmail(email, 'Sign Up Succeeded', '<h1>Thank You for joining the Classified Gamers, you successfully signed up!<h1/>').catch(err => console.log(err.toString()));
+            Mailing.sendEmail(primarySender, email, 'Sign Up Succeeded', '<h1>Thank You for joining the Classified Gamers, you successfully signed up!<h1/>').catch(err => console.log(err.toString()));
 
             let user = new User({
                 firstName: firstName,
@@ -546,7 +546,7 @@ const Mutation = {
             <p>Dear ${foundUser.lastName},</p>
             <p>Your password have been successfully changed</p>.
         `;
-        Mailing.sendEmail(foundUser.email, 'Password Reset Successful', mailBody).catch(err => console.log(err.toString()));
+        Mailing.sendEmail(primarySender, foundUser.email, 'Password Reset Successful', mailBody).catch(err => console.log(err.toString()));
         foundUser.save();
 
         await ResetPassword.deleteMany({ userId: userId });

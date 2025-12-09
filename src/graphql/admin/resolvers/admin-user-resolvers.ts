@@ -1,4 +1,3 @@
-import path from 'path';
 import fs from 'fs';
 import { readdir } from 'fs/promises';
 
@@ -7,7 +6,7 @@ import mongoose, { HydratedDocument } from 'mongoose';
 
 import { CtxArgs, InputArgs } from "../../../models/type-def.js";
 import User, { UserData } from "../../../models/user.js";
-import { resolverErrorChecker, orderEnums, validatePriceFormat, getDirname, isProductionEnv, GraphQLCustomError, checkUserRole } from "../../../util/helper.js";
+import { resolverErrorChecker, orderEnums, validatePriceFormat, isProductionEnv, GraphQLCustomError, checkUserRole } from "../../../util/helper.js";
 import { paths } from '../../../util/helper.js';
 import AdminKey from "../../../models/admin-keys.js";
 import { Slide, slidesFilePath } from "../../../models/slide.js";
@@ -26,7 +25,7 @@ import GameRepair from '../../../models/game-repair.js';
 import Refund from '../../../models/refund.js';
 import GameSwap, { IGameSwap } from '../../../models/game-swap.js';
 import GameRent from '../../../models/game-rent.js';
-import Mailing from '../../../models/mailing.js';
+import Mailing, { primarySender } from '../../../models/mailing.js';
 import InAppNotice from '../../../models/in-app-notice.js';
 
 
@@ -742,7 +741,7 @@ const Mutation = {
             <h1>Dear ${user!.firstName},</h1>
             <h1>Congratulations your KYC has been application has been verified and approved. </h1>
             </section>`
-            Mailing.sendEmail(user!.email, 'KYC Application Review', body).catch(err => console.log(err.toString()));
+            Mailing.sendEmail(primarySender, user!.email, 'KYC Application Review', body).catch(err => console.log(err.toString()));
         }
 
         user!.save();

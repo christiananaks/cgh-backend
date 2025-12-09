@@ -10,6 +10,10 @@ import user from "./user.js";
 const mailingSchema = new Schema<IMailing, IMailingModel>({
     info: {
         type: {
+            from: {
+                type: String,
+                required: true
+            },
             kind: {
                 type: String,
                 required: true
@@ -38,6 +42,7 @@ const mailingSchema = new Schema<IMailing, IMailingModel>({
 
 export interface IMailing extends IDocProps {
     info: {
+        from: string;
         kind: string;
         subject: string;
         body: string;
@@ -46,7 +51,7 @@ export interface IMailing extends IDocProps {
 }
 
 
-mailingSchema.statics.sendEmail = async function (email: string, subject: string, htmlBody: string): Promise<SMTPTransport.SentMessageInfo> {
+mailingSchema.statics.sendEmail = async function (from: string, email: string, subject: string, htmlBody: string): Promise<SMTPTransport.SentMessageInfo> {
     const transport = nodemailer.createTransport({
         host: 'smtp.sendgrid.net',
         port: 587,
@@ -58,7 +63,7 @@ mailingSchema.statics.sendEmail = async function (email: string, subject: string
     });
 
     return await transport.sendMail({
-        from: `${process.env.COMPANY_EMAIL}`,
+        from: from,
         to: email,
         subject: subject,
         html: htmlBody,
@@ -66,16 +71,16 @@ mailingSchema.statics.sendEmail = async function (email: string, subject: string
 };
 
 
-type TEmailProps = { kind: string; subject: string; content: string; };
+export type TEmailProps = { from: string; kind: string; subject: string; content: string; };
 interface IMailingModel extends Model<IMailing, {}> {
     sendBulkEmail: ({ emailProps, mailDoc }: { emailProps: TEmailProps; mailDoc?: HydratedDocument<IMailing>; }) => Promise<boolean>;
-    sendEmail: (email: string, subject: string, htmlBody: string) => Promise<SMTPTransport.SentMessageInfo>;
+    sendEmail: (from: string, email: string, subject: string, htmlBody: string) => Promise<SMTPTransport.SentMessageInfo>;
 }
 
 mailingSchema.statics.sendBulkEmail = async function ({ emailProps, mailDoc }: { emailProps: TEmailProps; mailDoc?: HydratedDocument<IMailing>; }) {
     type TMailData = { email: string; firstName: string; lastName: string; username: string; };
     let allUsers: TMailData[] | string[];
-    const { kind, subject, content } = emailProps;
+    const { from, kind, subject, content } = emailProps;
 
     // where request is for `/retry-mail/:mailId` use `failedDelivery` 
     if (mailDoc) {
@@ -92,7 +97,7 @@ mailingSchema.statics.sendBulkEmail = async function ({ emailProps, mailDoc }: {
         // send mail to each user containing user specific data such as name/username
         for (const user of allUsers as TMailData[]) {
             const processedContent = content.replaceAll('%firstName%', user.firstName).replaceAll('%lastName%', user.lastName);
-            const mailing = await Mailing.sendEmail(user.email, subject, processedContent);
+            const mailing = await Mailing.sendEmail(from, user.email, subject, processedContent);
             if (!mailing.accepted.includes(user.email)) {
                 failedDelivery.push({ email: user.email, firstName: user.firstName, lastName: user.lastName, username: user.username });
             }
@@ -101,7 +106,7 @@ mailingSchema.statics.sendBulkEmail = async function ({ emailProps, mailDoc }: {
     } else {
         // send general email to all users // where request is for `/retry-mail/:mailId` use `failedDelivery` 
         allUsers = mailDoc ? mailDoc.failedDelivery : (allUsers as TMailData[]).map(user => user.email) as any;
-        const mailing = await Mailing.sendEmail(allUsers.join(', '), subject, content);
+        const mailing = await Mailing.sendEmail(from, allUsers.join(', '), subject, content);
         if (mailing.rejected.length > 0) {
             failedDelivery = [...mailing.rejected] as string[];
         }
@@ -128,6 +133,7 @@ mailingSchema.statics.sendBulkEmail = async function ({ emailProps, mailDoc }: {
 
 const Mailing = mongoose.model<IMailing, IMailingModel>('Mailing', mailingSchema);
 
+export const primarySender = `${process.env.COMPANY_EMAIL}`;
 export default Mailing;
 
 

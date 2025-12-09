@@ -2,15 +2,14 @@
 import express from 'express';
 
 import { CustomError, resolverErrorChecker } from '../util/helper.js';
-import { CtxArgs } from '../models/type-def.js';
-import Mailing from '../models/mailing.js';
+import Mailing, { TEmailProps } from '../models/mailing.js';
 
 const router = express.Router();
 
 
 router.post('/send/all-users', async (req: any, res, next) => {
 
-    const { subject, content, kind } = req.body as { subject: string, content: string, kind: string };
+    const { from, subject, content, kind } = req.body as TEmailProps;
 
     try {
         resolverErrorChecker({ condition: !content.includes('<!DOCTYPE html>'), code: 422, message: 'Please enter a valid html content.' });
@@ -19,7 +18,7 @@ router.post('/send/all-users', async (req: any, res, next) => {
 
         resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'user is unauthorized.' });
 
-        const emailProps = { subject, content, kind };
+        const emailProps = { from, subject, content, kind };
 
         const isSent = await Mailing.sendBulkEmail({ emailProps });
 
@@ -46,7 +45,7 @@ router.post('/send/:mailId', async (req: any, res, next) => {
             throw new CustomError('Email not found!', 404);
         }
         const mailDoc = queryRes;
-        const emailProps = { kind: mailDoc.info.kind, subject: mailDoc.info.subject, content: mailDoc.info.body };
+        const emailProps = { from: mailDoc.info.from, kind: mailDoc.info.kind, subject: mailDoc.info.subject, content: mailDoc.info.body };
 
         const isSent = await Mailing.sendBulkEmail({ emailProps, mailDoc });
 

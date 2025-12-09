@@ -14,7 +14,7 @@ import Product from '../../../models/product.js';
 import Kyc from '../../../models/kyc.js';
 import Order from "../../../models/order.js";
 import Refund from "../../../models/refund.js";
-import Mailing from "../../../models/mailing.js";
+import Mailing, { primarySender } from "../../../models/mailing.js";
 
 
 
@@ -436,7 +436,7 @@ const Mutation = {
         resolverErrorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do not match!', code: 422 });
         try {
             newPassword = await bcrypt.hash(newPassword, 12);
-            await Mailing.sendEmail(user.email, 'Password Changed Successful', '<h1>Your password has been changed successfully!<h1/>');
+            await Mailing.sendEmail(primarySender, user.email, 'Password Changed Successful', '<h1>Your password has been changed successfully!<h1/>');
             await user.updateOne({ password: newPassword });
         } catch (err: any) {
             console.log(err.message);
