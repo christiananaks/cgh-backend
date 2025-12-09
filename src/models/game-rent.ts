@@ -81,7 +81,7 @@ gameRentSchema.static('delGameRent', async function (id: string) {
         const fileKey = foundGameRent!.imageUrl.split('.com/')[1];
         await s3DeleteObject(fileKey);
     } else {
-        clearImage(foundGameRent!.imageUrl);
+        await clearImage(foundGameRent!.imageUrl);
     }
 
     return { success: true, message: `GameRent: ${foundGameRent!.title} deleted successfully!` };

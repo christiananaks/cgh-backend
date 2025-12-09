@@ -20,7 +20,7 @@ const categoriesSchema = new Schema<CategoryData, CategoryModel>({
     title: {
         type: String,
         required: true,
-        // unique: true
+        unique: true
     },
     subcategoryData: {
         type: Map,

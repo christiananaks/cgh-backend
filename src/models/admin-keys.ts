@@ -1,11 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 
-import { getDirname } from '../util/helper.js';
+import { getDirname, isProductionEnv } from '../util/helper.js';
 
 
-
-export const accessKeysFile = path.join(getDirname(import.meta.url), '../../data', 'admin-creator-key.json');
+export const accessKeysFile = path.join(getDirname(import.meta.url), isProductionEnv ? '../../data' : '../../data/dev', 'admin-creator-key.json');
 export interface AccessData {
     user: string | null,
     access: string
@@ -17,21 +16,8 @@ export default class AdminKey {
     }
 
     accessData: AccessData;
-    // add `users` array. it would register any user userId using the keyword. OR add object which key is the userId and val is username
 
     async save(): Promise<void> {
-        // console.log('started writing save....');
-        // AdminKey.getAdminKeys().then((keysArray: string[]) => {
-        //     keysArray.push(this.keyword);
-        //     fs.writeFile(accessKeysFile, JSON.stringify(keysArray), (err) => {
-        //         if (err) {
-        //             console.log('error writing to admin passfile', err);
-        //         }
-        //         console.log('finished executing writefile');
-        //     })
-        // }).catch((err: any) => {
-        //     throw err;
-        // })
 
         try {
             const accessKeys = await AdminKey.getAdminKeys();

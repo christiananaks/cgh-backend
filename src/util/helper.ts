@@ -10,7 +10,7 @@ import bcrypt from 'bcrypt';
 import User, { UserData, UserStats } from '../models/user.js';
 import { IServMnt } from '../models/serv-mnt.js';
 import { ICurrency } from '../models/currency.js';
-import { TBlacklist } from '../models/type-def.js';
+import { CtxArgs, TBlacklist } from '../models/type-def.js';
 import { GraphQLError } from 'graphql';
 
 export const epochTime = { seconds: { oneDay: 86400 }, milliseconds: { oneDay: 86400000 } };
@@ -26,14 +26,26 @@ export const activityReg = [
 ];
 
 
+export function checkUserRole(req: CtxArgs['req']) {
+    const { isAuth, role } = req;
+
+    resolverErrorChecker({
+        condition: !isAuth || !['admin', 'superuser'].includes(role),
+        message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
+        code: !isAuth ? 401 : 403
+    });
+}
+
+
 export const getDirname = (fileUrl: string) => dirname(fileURLToPath(fileUrl));
 export const isProductionEnv = process.env.NODE_ENV === 'production';
 export const paths = {
     imageDir: path.join(getDirname(import.meta.url), '../../uploads/images'),
     documentDir: path.join(getDirname(import.meta.url), '../../uploads/documents'),
     miscDir: path.join(getDirname(import.meta.url), '../../uploads/misc'),
-    data: path.join(getDirname(import.meta.url), '../../data')
-}
+    data: path.join(getDirname(import.meta.url), '../../data'),
+    devData: path.join(getDirname(import.meta.url), '../../data/dev')
+};
 
 export const tokenDuration = { access: isProductionEnv ? '24h' : '3h', refresh: isProductionEnv ? '7d' : '5h' };
 /**
@@ -67,7 +79,8 @@ export function getExpiryTime(duration: string) {
 
 
 export async function blacklistToken(token: string, verify = false) {
-    const filePath = paths.data + '/token-blacklist.json';
+    const dataFilePath = isProductionEnv ? paths.data : paths.devData;
+    const filePath = dataFilePath + '/token-blacklist.json';
     const buffer = await fs.readFile(filePath);
     let blacklist: TBlacklist[] = JSON.parse(buffer.toString());
 

@@ -34,6 +34,7 @@ export interface AdminArgs {
 
 type AdminQueryInput = {
     title: string;
+    content: string;
     duration: string;
     game: string[];
     platform: string;
@@ -70,97 +71,100 @@ type TrendingGameData = {
 }
 
 
-export default {
-    Query: {
-        getAccessKeys: async (parent: any,) => {
-            const adminKeys = await AdminKey.getAdminKeys();
-            const usableKeys = adminKeys.filter(key => !key.user);
-            return { allAccessKeys: adminKeys, freeAccessKeys: usableKeys };
-        },
 
-        generateAccessKey: async (parent: any, { }, args: any, { req }: CtxArgs) => {
-            resolverErrorChecker({
-                condition: req.role !== 'superuser',
-                code: 403,
-                message: 'Error: Unauthorized access.'
-            });
-            const accessKeys = await AdminKey.getAdminKeys();
-            const keysArray = accessKeys.map(obj => obj.access);
-            return AdminKey.genKey(keysArray);
-        },
-    },
-    Mutation: {
-        createAdminUser: async (parent: any, { userQueryInput }: InputArgs, { req }: any) => {
-            resolverErrorChecker({
-                condition: !req.isAuth || req.role !== 'superuser',
-                code: !req.isAuth ? 401 : 403,
-                message: !req.isAuth ? 'Please login to continue.' : 'Forbidden request.'
-            });
-            req.isSuperReq = true; // check the state in createUser. if undefined then reset accInfo
-            const dataArgs: any = [{ userQueryInput }, { req }];
-
-            return appResolvers.Mutation.createUser(undefined, dataArgs[0], dataArgs[1]);
-
-        },
-        createAdminAccKeyword: async (parent: any, { keyword }: AdminArgs, args: any, { req }: CtxArgs) => {
-
-            if (req.role !== 'superuser') {
-                const error = new Error('User is not authorized');
-                Object.assign(error, { statusCode: 403 });
-                throw error;
-            }
-
-            const accessKeys = await AdminKey.getAdminKeys();
-            if (accessKeys.length > 4) {
-                const error: { [key: string]: any } = new Error('Keys list full :(');   // we can also handle this situation on the frontend
-                error.statusCode = 500;
-                throw error;
-            }
-
-            const enteredKeyword = keyword.trim();
-            let isPresent = accessKeys.map(data => data.access).includes(enteredKeyword);
-            const inputPattern = /^\d{2}\W{3}$/;
-            if (enteredKeyword.length != 5 || !inputPattern.test(enteredKeyword) || isPresent) {
-                const error: { [key: string]: any } = new Error(isPresent ? `"${enteredKeyword}" already exists!` : 'Entered word is invalid.');
-                error.statusCode = 422;
-                throw error;
-            }
-
-            const adminKey = new AdminKey({ user: null, access: enteredKeyword });
-
-            await adminKey.save();
-            accessKeys.push(adminKey.accessData);
-
-
-            return accessKeys;
-        },
-
-        deleteAdminAccKeyword: async (parent: any, { keyword }: AdminArgs, args: any, { req }: CtxArgs) => {
-            let accessKeys = await AdminKey.getAdminKeys();
-            let isPresent = accessKeys.map(data => data.access).includes(keyword);
-
-            if (!isPresent) {
-                const error: { [key: string]: any } = new Error('Keyword not found!');
-                error.statusCode = 404;
-                throw error;
-            }
-
-            accessKeys = accessKeys.filter(data => data.access !== keyword);
-
-            fs.writeFile(accessKeysFile, JSON.stringify(accessKeys), err => {
-                if (err) console.log(err);
-            });
-            return true;
-        },
-        clearAccessKeys: async (parent: any, { }, args: any, { req }: CtxArgs) => {
-            resolverErrorChecker({ condition: req.role !== 'superuser', code: 403, message: 'Error: Unauthorized user.' });
-            fs.writeFile(accessKeysFile, JSON.stringify([]), (err: any) => {
-                if (err) {
-                    throw new Error(err.message);
-                }
-            });
-            return [];
-        },
+const Query = {
+    getAccessKeys: async (parent: any,) => {
+        const adminKeys = await AdminKey.getAdminKeys();
+        const usableKeys = adminKeys.filter(key => !key.user);
+        return { allAccessKeys: adminKeys, freeAccessKeys: usableKeys };
     },
 
+    generateAccessKey: async (parent: any, { }, args: any, { req }: CtxArgs) => {
+        resolverErrorChecker({
+            condition: req.role !== 'superuser',
+            code: 403,
+            message: 'Error: Unauthorized access.'
+        });
+        const accessKeys = await AdminKey.getAdminKeys();
+        const keysArray = accessKeys.map(obj => obj.access);
+        return AdminKey.genKey(keysArray);
+    },
+};
+
+
+const Mutation = {
+    createAdminUser: async (parent: any, { userQueryInput }: InputArgs, { req }: any) => {
+        resolverErrorChecker({
+            condition: !req.isAuth || req.role !== 'superuser',
+            code: !req.isAuth ? 401 : 403,
+            message: !req.isAuth ? 'Please login to continue.' : 'Forbidden request.'
+        });
+        req.isSuperReq = true; // check the state in createUser. if undefined then reset accInfo
+        const dataArgs: any = [{ userQueryInput }, { req }];
+
+        return appResolvers.Mutation.createUser(undefined, dataArgs[0], dataArgs[1]);
+
+    },
+    createAdminAccKeyword: async (parent: any, { keyword }: AdminArgs, args: any, { req }: CtxArgs) => {
+
+        if (req.role !== 'superuser') {
+            const error = new Error('User is not authorized');
+            Object.assign(error, { statusCode: 403 });
+            throw error;
+        }
+
+        const accessKeys = await AdminKey.getAdminKeys();
+        if (accessKeys.length > 4) {
+            const error: { [key: string]: any } = new Error('Keys list full :(');   // we can also handle this situation on the frontend
+            error.statusCode = 500;
+            throw error;
+        }
+
+        const enteredKeyword = keyword.trim();
+        let isPresent = accessKeys.map(data => data.access).includes(enteredKeyword);
+        const inputPattern = /^\d{2}\W{3}$/;
+        if (enteredKeyword.length != 5 || !inputPattern.test(enteredKeyword) || isPresent) {
+            const error: { [key: string]: any } = new Error(isPresent ? `"${enteredKeyword}" already exists!` : 'Entered word is invalid.');
+            error.statusCode = 422;
+            throw error;
+        }
+
+        const adminKey = new AdminKey({ user: null, access: enteredKeyword });
+
+        await adminKey.save();
+        accessKeys.push(adminKey.accessData);
+
+
+        return accessKeys;
+    },
+
+    deleteAdminAccKeyword: async (parent: any, { keyword }: AdminArgs, args: any, { req }: CtxArgs) => {
+        let accessKeys = await AdminKey.getAdminKeys();
+        let isPresent = accessKeys.map(data => data.access).includes(keyword);
+
+        if (!isPresent) {
+            const error: { [key: string]: any } = new Error('Keyword not found!');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        accessKeys = accessKeys.filter(data => data.access !== keyword);
+
+        fs.writeFile(accessKeysFile, JSON.stringify(accessKeys), err => {
+            if (err) console.log(err);
+        });
+        return true;
+    },
+    clearAccessKeys: async (parent: any, { }, args: any, { req }: CtxArgs) => {
+        resolverErrorChecker({ condition: req.role !== 'superuser', code: 403, message: 'Error: Unauthorized user.' });
+        fs.writeFile(accessKeysFile, JSON.stringify([]), (err: any) => {
+            if (err) {
+                throw new Error(err.message);
+            }
+        });
+        return [];
+    },
 }
+
+
+export default { Query, Mutation };

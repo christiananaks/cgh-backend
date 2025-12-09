@@ -122,7 +122,7 @@ gameSwapSchema.statics.delGameSwap = async function (id) {
         const fileKey = deletedDoc!.imageUrl.split('.com/')[1];
         await s3DeleteObject(fileKey);
     } else {
-        clearImage(deletedDoc!.imageUrl);
+        await clearImage(deletedDoc!.imageUrl);
     }
 
     return { success: true, message: `Successfully deleted GameSwap: ${deletedDoc?.title}!` };

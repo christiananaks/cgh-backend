@@ -1,13 +1,13 @@
 import http from 'http';
 
-// @ts-ignore
-import graphiql from 'express-graphiql-explorer';
 import express, { NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
 import { graphqlUploadExpress } from 'graphql-upload-ts';
+import sls from 'serverless-http';
+
 
 import userstats from './middleware/userstats.js';
 import execSchema from './graphql/merged-schema.js';
@@ -44,19 +44,17 @@ const apolloServer = new ApolloServer({
     }
 });
 
+await apolloServer.start();
 
 app.use(express.json());
-
-await apolloServer.start();
 
 app.use('/uploads', getFile);
 
 
 app.use((req, res, next) => {
-    // add header to configure CORS to enable us share data from the server with client from other domain. // res.setHeader does NOT send a response like json or render, it only modifies the headers
-    res.setHeader('Access-Control-Allow-Origin', '*');  // TODO: `*` should be the client domain after development
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', "GET, POST, PUT, PATCH, DELETE");
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // there are default headers set. we just add specific headers
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     next();
 });
 
@@ -71,16 +69,7 @@ app.use(verifyOfflinePayment);
 app.use('/verify-payment', verifyPayment, createReqOrder);
 app.use(createPodOrder);
 
-// for graphiql explorer
-app.use('/graphiql', graphiql({
-    graphQlEndpoint: '/graphql',
-    defaultQuery: `query Query {
-login(email: "test@test.com", password: "${process.env.DEV_PASSWORD}") {
-accessToken
-role
-}
-}`
-}));
+
 
 app.all(
     '/cgh-backend-gql',
@@ -98,17 +87,19 @@ app.use((error: { message: string, statusCode: number }, req: Request, res: Resp
 });
 
 
-mongoose.connect(`mongodb+srv://${process.env.CONNECTION_STRING}?retryWrites=true`).then((conn) => {
-    console.log('connected!');
-    const server = app.listen(process.env.PORT || 8080);
+try {
+    await mongoose.connect(`mongodb+srv://${process.env.CONNECTION_STRING}?retryWrites=true`);
+    console.log('Database connection established successfully.');
+} catch (err: any) {
+    console.log("DB CONNECTION FAILED!");
+    throw err;
+}
+User.findOne({ 'accInfo.role': 'superuser' }).then(user => {
+    if (!user && process.env.SU_PASSWORD) {
+        createSuperUser(process.env.SU_PASSWORD).then(res => console.log('superuser was created successfully')).catch(err => console.log(err.toString()));
+    }
+}).catch(err => console.log(err.message));
 
-    User.findOne({ 'accInfo.role': 'superuser' }).then(user => {
-        if (!user && process.env.SU_PASSWORD) {
-            createSuperUser(process.env.SU_PASSWORD).catch(err => console.log(err.toString()));
-            console.log('superuser was created successfully');
-            return;
-        }
-    });
+export const handler = sls(app);
 
-}).catch(err => console.log(err));
 

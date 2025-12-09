@@ -231,6 +231,13 @@ export default `#graphql
         product: [String!]!
     }
 
+    type InAppNotice {
+        id: ID!
+        title: String!
+        content: String!
+        imageUrl: String
+    }
+
     input RepairInput {
         title: String!
         imageUrl: String
@@ -289,8 +296,14 @@ export default `#graphql
         rate: Float!
     }
 
+    input AppNoticeInput {
+        title: String! 
+        content: String! 
+        imageUrl: String
+    }
+
+
     type Query {
-        slides: [Slide!]!
         getAccessKeys: AccessKeysInfo!
         getAdminUsers: [UserCard!]!
         getAdminUserInfo(id: ID!): UserInfo!
@@ -306,6 +319,7 @@ export default `#graphql
         getCurrencyList: [Currency!]!
         getRefunds: [Refund]!
         getRefundInfo(id: ID!): RefundInfo!
+        getAllAppNotice: [InAppNotice!]!
     }
 
     type Mutation {
@@ -315,7 +329,7 @@ export default `#graphql
         addProductToCategory(id: String!, categoryTitle: String!, subcategoryTitle: String! ): ActionStatus!
         createProduct(adminQueryInput: ProdData, prodId: String): ProdStatus!
         createTrendingGame(trendingGameInput: TrendingGameData!): ActionStatus!
-        deleteSlide(id: ID!): Boolean
+        deleteSlide(id: String!): Boolean
         deleteProduct(id: ID!): ActionStatus
         deleteCategory(id: ID!): ActionStatus
         createAdminAccKeyword(keyword: String!): [AccessData!]!
@@ -342,5 +356,7 @@ export default `#graphql
         deleteGameSwap(id: ID!): ActionStatus!
         createGameRent(adminQueryInput: GameRentInput!): ActionStatus!
         deleteGameRent(id: ID!): ActionStatus!
+        createInAppNotice(adminQueryInput: AppNoticeInput!): ActionStatus!
+        deleteAppNotice(id: String!): ActionStatus!
     }
 `;
