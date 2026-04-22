@@ -2,7 +2,7 @@ import mongoose, { Model, Types, Document, Schema, HydratedDocument } from 'mong
 
 import { ProductData } from './product.js';
 import Order, { PaymentInfo } from './order.js';
-import { calPrice, epochTime, resolverErrorChecker } from '../util/helper.js';
+import { GraphQLCustomError, calPrice, epochTime, errorChecker } from '../util/helper.js';
 import { ICurrency } from './currency.js';
 import Post, { IPost } from './post.js';
 import { IDocProps } from './type-def.js';
@@ -13,7 +13,7 @@ interface UserModel extends Model<UserData, {}, IUserMethods> {
     getUserCart(userId: string, currency: ICurrency): Promise<CartData[]>;
     getUserOrders(userId: string): Promise<object[]>;
     getUserOrderDetails(orderId: string, userId: string): Promise<object[]>;
-    updateUserStats(user: HydratedDocument<UserData>): Promise<void>;
+    updateUserStats(userstats: UserStats): { updatedStats: boolean, stats: UserStats };
 }
 
 interface IUserMethods {
@@ -163,11 +163,9 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
     ],
     wishlist: [
         {
-            productId: {
-                type: Schema.Types.ObjectId,
-                ref: "Product",
-                required: true
-            }
+            type: Schema.Types.ObjectId,
+            ref: "Product",
+            required: true
         }
     ],
     cart: [
@@ -191,9 +189,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                 const user: UserData | null = await this.findById(userId).populate('cart.productId', 'title imageUrls price');
 
                 if (!user) {
-                    const error: { [key: string]: any } = new Error('Please login to view your cart.');
-                    error.statusCode = 403;
-                    throw error;
+                    throw new GraphQLCustomError('Please login to view your cart.', 403);
                 }
 
                 if (1 > user.cart.length) {
@@ -255,7 +251,7 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
             },
             getUserOrderDetails: async (orderId: string, userId: string) => {
                 const order = await Order.findById(orderId);
-                resolverErrorChecker({
+                errorChecker({
                     condition: !order || order.userInfo.userId !== userId,
                     message: !order ? 'Order not found' : 'Unauthorized request!',
                     code: !order ? 404 : 403
@@ -270,40 +266,49 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
                 }
                 return orderDetails;
             },
-            updateUserStats: async (user: HydratedDocument<UserData>) => {
+            updateUserStats: (userstats: UserStats): { updatedStats: boolean, stats: UserStats } => {
                 const presentDay = new Date();
-                const lastUpdated = user.stats.date;
+                const lastUpdated = userstats.date;
                 const oneDay = epochTime.milliseconds.oneDay;
 
+                // if the last time the userstat was updated is not the same day but less than 24hrs   
                 if (lastUpdated.toDateString() !== presentDay.toDateString() && presentDay.valueOf() - lastUpdated.valueOf() <= oneDay) {
-                    user.stats.sp += 1;
-                    if ((presentDay.valueOf() - user.stats.day.date.valueOf()) / oneDay >= 28) {
-                        const value = user.stats.day.requiredDays;
-                        user.stats.day.requiredDays -= value - 1 === 0 ? 0 : 1; // deduct nothing unless `value` - 1 is greater than 0
-                        user.stats.day.date = presentDay;
+                    userstats.sp += 1;
+
+                    // where user was active for 28 days or more, we reduce `requiredDays`
+                    if (((presentDay.valueOf() - userstats.day.date.valueOf()) / oneDay) >= 28) {
+                        const value = userstats.day.requiredDays;
+                        userstats.day.requiredDays -= (value - 1) === 0 ? 0 : 1; // deduct nothing unless `value` - 1 is greater than 0
+                        userstats.day.date = presentDay;
                     }
 
-                    if ((presentDay.valueOf() - user.stats.xp.date.valueOf()) / oneDay >= user.stats.day.requiredDays) {
-                        user.stats.xp.value += 1;
-                        user.stats.xp.date = presentDay;
+                    // where the last date xp was updated is greater or equal to 7 days, we increase `xp` 
+                    if ((presentDay.valueOf() - userstats.xp.date.valueOf()) / oneDay >= userstats.day.requiredDays) {
+                        userstats.xp.value += 1;
+                        userstats.xp.date = presentDay;
                     }
 
-                    if (user.stats.xp.value >= user.stats.xp.max) {
-                        user.stats.level += 1;
-                        user.stats.xp.value = 0;
-                        user.stats.xp.max += 100;
+                    if (userstats.xp.value >= userstats.xp.max) {
+                        userstats.level += 1;
+                        userstats.xp.value = 0;
+                        userstats.xp.max += 100;
                     }
 
-                    user.stats.date = presentDay;
-                    await user.save();
+                    userstats.date = presentDay;
+                    return { updatedStats: true, stats: userstats };
+
                 } else if (lastUpdated.toDateString() !== presentDay.toDateString()) {
-                    user.stats.sp = 1;
-                    user.stats.day.requiredDays = 7;
-                    user.stats.day.date = presentDay;
-                    user.stats.xp.date = presentDay;
-                    user.stats.date = presentDay;
-                    await user.save();
+                    userstats.sp = 1;
+                    userstats.day.requiredDays = 7;
+                    userstats.day.date = presentDay;
+                    userstats.xp.date = presentDay;
+                    userstats.date = presentDay;
+
+                    return { updatedStats: true, stats: userstats };
+
                 }
+
+                return { updatedStats: false, stats: userstats };
             }
         },
     });
@@ -311,21 +316,21 @@ const userSchema = new Schema<UserData, UserModel, IUserMethods>({
 
 
 userSchema.method('editUserWishlist', async function (prodId: string): Promise<wishlistActionResult> {
-    const foundProd = this.wishlist.find(obj => obj.productId.toString() === prodId);
-    let confirmEditStatus;
+    const foundProd = this.wishlist.find(obj => obj.toString() === prodId);
+    let wasAdded;
     if (foundProd) {
-        this.wishlist.pull(foundProd._id);
-        confirmEditStatus = false;
+        this.wishlist.pull(foundProd);
+        wasAdded = false;
     } else {
-        this.wishlist.push({ productId: new Types.ObjectId(prodId) });
-        confirmEditStatus = true;
+        this.wishlist.push(new Types.ObjectId(prodId));
+        wasAdded = true;
     }
 
     await this.save();
 
     const result: wishlistActionResult = {
-        addedToWishlist: confirmEditStatus,
-        actionStatus: confirmEditStatus ? 'Added to wishlist.' : 'Removed from wishlist.'
+        addedToWishlist: wasAdded,
+        actionStatus: wasAdded ? 'Added to wishlist.' : 'Removed from wishlist.'
     }
     return result;
 });
@@ -333,20 +338,20 @@ userSchema.method('editUserWishlist', async function (prodId: string): Promise<w
 userSchema.method('getUserWishlist', async function (currency: ICurrency): Promise<ProductData[]> {
 
     const itemsLength = this.wishlist.length;
-    const populated: UserData = await this.populate('wishlist.productId', 'title category subcategory imageUrls desc condition price stockQty');
+    const populated: UserData = await this.populate('wishlist', 'title category subcategory imageUrls desc condition price stockQty');
     const filteredWishlist = populated.wishlist.filter((pObj) => {
-        if (pObj.productId) {
+        if (pObj) {
             return true;
         }
 
-        this.wishlist.pull(pObj._id);   // removes the item from user wishlist when it was not found while populating
+        this.wishlist.pull(pObj);   // removes the item from user wishlist when it was not found while populating
     });
 
     let wishlist = [];
     if (filteredWishlist.length > 0) {
         wishlist = filteredWishlist.map((pObj: any) => {
-            const price = calPrice(+pObj.productId.price, currency);
-            return { ...pObj.productId._doc, id: pObj.id, price: price };
+            const price = calPrice(+pObj.price, currency);
+            return { ...pObj._doc, id: pObj.id, price: price };
         });
     }
 
@@ -367,7 +372,7 @@ userSchema.pre('deleteOne', { document: true, query: false }, async function (ne
             return next();
         }
 
-        const postsToSave: mongoose.Document<unknown, {}, IPost>[] = [];
+        const postsToSave: IPost[] = [];
         const posts = await Post.find({ comments: { $ne: [] } });  // finds all comments that are not empty
 
         // where no post was found
@@ -375,7 +380,7 @@ userSchema.pre('deleteOne', { document: true, query: false }, async function (ne
             return next();
         }
         posts.forEach((post) => {
-            post.comments.forEach((comm) => {
+            post.comments.forEach((comm: any) => {
 
                 if (comm.userInfo.toString() === userId) {
                     post.comments.pull(comm._id);
@@ -390,10 +395,6 @@ userSchema.pre('deleteOne', { document: true, query: false }, async function (ne
     }
 });
 
-type wishlistObj = {
-    productId: Types.ObjectId;
-    _id?: Types.ObjectId;
-};
 
 type wishlistActionResult = {
     addedToWishlist: boolean;
@@ -452,7 +453,7 @@ export interface UserDocProps {
     profilePic: string | null;
     myGames: { category: string, names: string[] }[];
     purchaseHistory: TypePurchaseHistory[];
-    wishlist: Types.Array<wishlistObj>;
+    wishlist: Types.Array<Types.ObjectId>;
     cart: Types.Array<CartObject>;
 }
 
@@ -466,5 +467,6 @@ export interface UserData extends UserDocProps, IDocProps, Document, IUserMethod
     accInfo: AccountInfo;
 };
 
-export default mongoose.model<UserData, UserModel>("User", userSchema);
+const User = mongoose.model<UserData, UserModel>("User", userSchema);
+export default User;
 

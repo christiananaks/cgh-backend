@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model } from "mongoose";
-import { epochTime, isProductionEnv } from "../util/helper.js";
+import { GraphQLCustomError, epochTime, isProductionEnv } from "../util/helper.js";
 
 
 const refundSchema = new Schema<IRefund, TRefundModel>({
@@ -93,7 +93,7 @@ refundSchema.static('refunds', async function (): Promise<object[]> {
 refundSchema.static('usersRefundInfo', async function (id: string): Promise<object> {
 
     const refundInfo = await this.findById(id).populate('orderInfo', 'items product payment');
-    if (!refundInfo) throw new Error('Error: Refund not found');
+    if (!refundInfo) throw new GraphQLCustomError('Error: Refund not found');
 
     const orderInfo: { [key: string]: any } = {};
     if (refundInfo.orderInfo.items) {

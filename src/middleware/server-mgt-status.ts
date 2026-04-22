@@ -1,5 +1,5 @@
 import ServerMnt from "../models/serv-mnt.js";
-import { resolverErrorChecker, loginReqAccRole } from "../util/helper.js";
+import { errorChecker, loginReqAccRole } from "../util/helper.js";
 
 
 export default async (req: any, res: any, next: any) => {
@@ -11,14 +11,14 @@ export default async (req: any, res: any, next: any) => {
     req.role = result.role || req.role;   // set the logged in request role. if null keep the existing.
     console.log('auth role: ', req.role, '. login request role: ', result.role, Date.now() >= mgtState[0].expireAt.getTime());
     try {
-        resolverErrorChecker({ condition: !req.isAuth && !req.role, code: 500, message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}` });
-        resolverErrorChecker({
+        errorChecker({ condition: !req.isAuth && !req.role, code: 500, message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}` });
+        errorChecker({
             condition: mgtState[0].level === 2 && req.role !== 'superuser',
             code: 500,
             message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}`
         });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: mgtState[0].level === 1 && !['admin', 'superuser'].includes(req.role),
             code: 500,
             message: `Server busy, try again later after ms: ${mgtState[0].expireAt.getTime()}`

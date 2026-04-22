@@ -3,7 +3,7 @@ import fs from 'fs';
 
 import AdminKey, { accessKeysFile } from "../../../models/admin-keys.js";
 import { Slide } from "../../../models/slide.js";
-import { resolverErrorChecker } from "../../../util/helper.js";
+import { checkUserRole, errorChecker } from "../../../util/helper.js";
 import appResolvers from '../../public/app-resolvers.js';
 import { CtxArgs, InputArgs } from '../../../models/type-def.js';
 
@@ -22,7 +22,6 @@ export interface AdminArgs {
     token: string;
     slideInput: Slide;
     keyword: string;
-    postTitle: string;
     adminQueryInput: AdminQueryInput;
     action: string;
     orderId: string;
@@ -33,6 +32,7 @@ export interface AdminArgs {
 
 
 type AdminQueryInput = {
+    text: string;
     title: string;
     content: string;
     duration: string;
@@ -59,6 +59,7 @@ type AdminQueryInput = {
     country: string;
     currency: string;
     rate: number;
+    tags: string[] | undefined;
 }
 
 type TrendingGameData = {
@@ -80,7 +81,7 @@ const Query = {
     },
 
     generateAccessKey: async (parent: any, { }, args: any, { req }: CtxArgs) => {
-        resolverErrorChecker({
+        errorChecker({
             condition: req.role !== 'superuser',
             code: 403,
             message: 'Error: Unauthorized access.'
@@ -94,7 +95,7 @@ const Query = {
 
 const Mutation = {
     createAdminUser: async (parent: any, { userQueryInput }: InputArgs, { req }: any) => {
-        resolverErrorChecker({
+        errorChecker({
             condition: !req.isAuth || req.role !== 'superuser',
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue.' : 'Forbidden request.'
@@ -114,20 +115,17 @@ const Mutation = {
         }
 
         const accessKeys = await AdminKey.getAdminKeys();
-        if (accessKeys.length > 4) {
-            const error: { [key: string]: any } = new Error('Keys list full :(');   // we can also handle this situation on the frontend
-            error.statusCode = 500;
-            throw error;
-        }
+        errorChecker({ condition: accessKeys.length > 4, message: 'Keys list full :(' });
 
         const enteredKeyword = keyword.trim();
         let isPresent = accessKeys.map(data => data.access).includes(enteredKeyword);
         const inputPattern = /^\d{2}\W{3}$/;
-        if (enteredKeyword.length != 5 || !inputPattern.test(enteredKeyword) || isPresent) {
-            const error: { [key: string]: any } = new Error(isPresent ? `"${enteredKeyword}" already exists!` : 'Entered word is invalid.');
-            error.statusCode = 422;
-            throw error;
-        }
+
+        errorChecker({
+            condition: enteredKeyword.length != 5 || !inputPattern.test(enteredKeyword) || isPresent,
+            message: isPresent ? `"${enteredKeyword}" already exists!` : 'Entered word is invalid.',
+            code: 422
+        });
 
         const adminKey = new AdminKey({ user: null, access: enteredKeyword });
 
@@ -142,12 +140,7 @@ const Mutation = {
         let accessKeys = await AdminKey.getAdminKeys();
         let isPresent = accessKeys.map(data => data.access).includes(keyword);
 
-        if (!isPresent) {
-            const error: { [key: string]: any } = new Error('Keyword not found!');
-            error.statusCode = 404;
-            throw error;
-        }
-
+        errorChecker({ condition: !isPresent, message: 'Keyword not found!', code: 404 });
         accessKeys = accessKeys.filter(data => data.access !== keyword);
 
         fs.writeFile(accessKeysFile, JSON.stringify(accessKeys), err => {
@@ -156,7 +149,7 @@ const Mutation = {
         return true;
     },
     clearAccessKeys: async (parent: any, { }, args: any, { req }: CtxArgs) => {
-        resolverErrorChecker({ condition: req.role !== 'superuser', code: 403, message: 'Error: Unauthorized user.' });
+        errorChecker({ condition: req.role !== 'superuser', code: 403, message: 'Error: Unauthorized user.' });
         fs.writeFile(accessKeysFile, JSON.stringify([]), (err: any) => {
             if (err) {
                 throw new Error(err.message);

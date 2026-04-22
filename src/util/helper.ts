@@ -3,7 +3,9 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
+
 import jwt from 'jsonwebtoken';
+import { StringValue } from 'ms';
 import bcrypt from 'bcrypt';
 
 
@@ -29,7 +31,7 @@ export const activityReg = [
 export function checkUserRole(req: CtxArgs['req']) {
     const { isAuth, role } = req;
 
-    resolverErrorChecker({
+    errorChecker({
         condition: !isAuth || !['admin', 'superuser'].includes(role),
         message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorized request!',
         code: !isAuth ? 401 : 403
@@ -47,14 +49,14 @@ export const paths = {
     devData: path.join(getDirname(import.meta.url), '../../data/dev')
 };
 
-export const tokenDuration = { access: isProductionEnv ? '24h' : '3h', refresh: isProductionEnv ? '7d' : '5h' };
+type TTokenDuration = { access: StringValue, refresh: StringValue };
+export const tokenDuration: TTokenDuration = { access: isProductionEnv ? '24h' : '12h', refresh: isProductionEnv ? '7d' : '1d' };
 /**
  * Generates accessToken and refreshToken for auth user.
  * @param user 
  * @returns { accessToken: string, refreshToken: string } 
  */
 export function createTokens(user: UserData): { accessToken: string, refreshToken: string } {
-
     const accessToken = jwt.sign({
         userId: user.id,
         email: user.email,
@@ -64,7 +66,6 @@ export function createTokens(user: UserData): { accessToken: string, refreshToke
     const refreshToken = jwt.sign({
         expires: new Date(getExpiryTime(tokenDuration.refresh))
     }, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`, { expiresIn: tokenDuration.refresh });
-
 
     return { accessToken, refreshToken };
 }
@@ -142,9 +143,14 @@ export type ErrData = {
     message?: string;
     code?: number;
 }
-/** error checker function  */
-export function resolverErrorChecker(args: ErrData): void {
+/** Throws either `CustomError` or  `GraphQLCustomError`.
+ * Default is 'GraphQLCustomError'.
+ */
+export function errorChecker(args: ErrData, customError = false): void {
     if (args.condition) {
+        if (customError) {
+            throw new CustomError(args.message || 'An error occurred!', args.code);
+        }
         throw new GraphQLCustomError(args.message || 'An error occurred!', args.code);
     }
 }
@@ -195,6 +201,13 @@ export async function createSuperUser(password: string) {
     return user.save();
 }
 
+/** Formats user `stats` to valid return type. */
 export function resUserstats(stats: UserStats) {
-    return { sp: stats.sp, xp: stats.xp.value, maxXp: stats.xp.max, level: stats.level, date: stats.date.toISOString() };;
+    return {
+        sp: stats.sp,
+        xp: stats.xp.value,
+        maxXp: stats.xp.max,
+        level: stats.level,
+        date: stats.date.toISOString()
+    }
 }

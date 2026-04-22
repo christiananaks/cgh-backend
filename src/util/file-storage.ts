@@ -6,7 +6,7 @@ import fs from 'fs';
 import { S3Client, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
-import { GraphQLCustomError, resolverErrorChecker, getDirname } from './helper.js';
+import { GraphQLCustomError, errorChecker, getDirname } from './helper.js';
 import { FileStorageArgs } from '../models/type-def.js';
 
 
@@ -87,7 +87,7 @@ export async function s3UploadObject(args: FileStorageArgs) {
             const fileExt = filename.replaceAll(filenameOnly, '').trim();
 
             if (i === 0 && ['product', 'KYC'].includes(folderName)) {
-                resolverErrorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
+                errorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
 
                 const p = `${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
                 s3Params.Key = p;
@@ -139,7 +139,7 @@ export async function localUpload(args: FileStorageArgs) {
 
                 if (i === 0 && ['product', 'KYC'].includes(folderName)) {
                     try {
-                        resolverErrorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
+                        errorChecker({ condition: !id, message: `Error: ${folderName} ID is not provided.` });
                     } catch (err: any) {
                         reject(err.message);
                         return;
@@ -150,23 +150,31 @@ export async function localUpload(args: FileStorageArgs) {
                     fs.mkdirSync(`${pathName}/${folderName}/${id}`);
 
                     const p = `${pathName}/${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
-                    stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
-                    filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+                    saveImageLocally(p, stream, filesURLPath, resolve, reject);
                     return;
                 } else if (['product', 'KYC'].includes(folderName)) {
 
                     const p = `${pathName}/${folderName}/${id}/${i}-${filenameOnly}${fileExt}`;
-                    stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
-                    filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+                    saveImageLocally(p, stream, filesURLPath, resolve, reject);
                     return;
                 }
 
                 const p = `${pathName}/${folderName}/${i}-${new Date().toISOString()}${filename}`;
-                stream.pipe(fs.createWriteStream(p)).on('finish', resolve).on('error', reject);
-                filesURLPath.push(p.slice(p.indexOf(`uploads`)));
+                saveImageLocally(p, stream, filesURLPath, resolve, reject);
             });
         } catch (err: any) {
+            // case where `reject` was invoked during stream.pipe execution
+            if (!err) {
+                throw new GraphQLCustomError('An error occurred while uploading image.');
+            }
             throw new GraphQLCustomError(err);
         }
     }
+}
+
+
+type TVoidCallBack = (value: unknown) => void;
+function saveImageLocally(path: string, stream: fs.ReadStream, filesURLPath: string[], resolve: TVoidCallBack, reject: TVoidCallBack) {
+    stream.pipe(fs.createWriteStream(path)).on('finish', resolve).on('error', reject);
+    filesURLPath.push(path.slice(path.indexOf(`uploads`)));
 }

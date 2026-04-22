@@ -1,17 +1,5 @@
 export default `#graphql
-    type Comment {
-        commentId: ID!
-        profilePic: String
-        username: String!
-        comment: String!
-    }
-
-    type Post {
-        postId: ID!
-        postTitle: String!
-        comments: [Comment!]!
-    }
-
+    
     type ProdDetails {
         prodId: ID!
         title: String!
@@ -112,6 +100,20 @@ export default `#graphql
         updatedAt: String!
     }
 
+    type AuthUser {
+        userId: ID!
+        profilePic: String
+        firstName: String!
+        lastName: String!
+        username: String!
+        email: String!
+        stats: UserStats!
+        accInfo: AccInfo!
+        myGames: [MyGames!]!
+        wishlist: [String!]!
+        purchaseHistory: String
+    }
+
     input ValidId {
         kind: String!
         docUrl: String!
@@ -156,10 +158,9 @@ export default `#graphql
         getAccInfoSettings: AccInfoSettings!
         getUserOrders: [UserOrder!]!
         getUserOrder(orderId: String!): UserOrderDetails!
-        getRecommendedProducts: [Product]!
         getOrderRefund(orderId: String!): GetRefundOrder!
         getUserOrderRefundInfo(orderId: String!): UserOrderRefundInfo!
-        getAuthUser(id: ID!): AuthData!
+        getAuthUser: AuthUser!
     }
 
     type Mutation {

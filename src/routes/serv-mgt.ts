@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import ServerMnt from "../models/serv-mnt.js";
-import { resolverErrorChecker } from "../util/helper.js";
+import { errorChecker } from "../util/helper.js";
 import User from "../models/user.js";
 
 
@@ -14,10 +14,10 @@ router.post('/serv-management', async (req: any, res, next) => {
 
 
     try {
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please login to continue.' });
-        resolverErrorChecker({ condition: mgtState.length > 0, code: 409, message: "Can't complete your request until active management session ends." });
-        resolverErrorChecker({ condition: !allowedUsers.includes(req.role), code: 403, message: 'user is unauthorized.' });
-        resolverErrorChecker({
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please login to continue.' });
+        errorChecker({ condition: mgtState.length > 0, code: 409, message: "Can't complete your request until active management session ends." });
+        errorChecker({ condition: !allowedUsers.includes(req.role), code: 403, message: 'user is unauthorized.' });
+        errorChecker({
             condition: req.body.minutes && req.body.minutes <= 10,
             message: 'Duration must be 11 minutes or more.',
             code: 422

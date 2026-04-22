@@ -3,14 +3,13 @@ import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
 import Options from '../models/options.js';
 import Currency from '../models/currency.js';
-import { blacklistToken } from '../util/helper.js';
+import { GraphQLCustomError, blacklistToken } from '../util/helper.js';
 
 
 export default async (req: any, res: any, next: any) => {
     try {
         const authHeader = req.get('Authorization');
 
-        // currency header is added to request on client-side
         let currency = req.get('Currency');
         if (!currency) {
             const defaultCurrency = await Options.find().populate('defaultCurrency.currency', 'currency rate');
@@ -21,7 +20,7 @@ export default async (req: any, res: any, next: any) => {
         }
 
         if (!currency) {
-            throw new Error('Error: Currency is not set in header and not found in DB!');
+            throw new GraphQLCustomError('Error: Currency is not set in header and not found in DB!');
         }
 
         req.currency = currency;

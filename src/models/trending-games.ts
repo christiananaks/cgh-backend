@@ -21,7 +21,7 @@ const trendingGamesSchema = new Schema<ITrendingGame, TrendingGamesModel, ITrend
     platform: {
         type: String,
         required: true,
-        default: 'PS5 | PS4 | NINTENDO SWITCH | XBOX SERIES | XBOX ONE | MICROSOFT WINDOWS'
+        default: 'PS5 | PS4 | NINTENDO SWITCH | NINTENDO SWITCH 2 | XBOX SERIES | XBOX ONE | MICROSOFT WINDOWS'
     },
     genre: {
         type: String,

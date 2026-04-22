@@ -1,8 +1,8 @@
 import mongoose, { Model, Schema } from "mongoose";
 import { TActionStatus } from "./type-def.js";
-import Categories from "./category.js";
+import Category from "./category.js";
 import Product from "./product.js";
-import { isProductionEnv, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { isProductionEnv, errorChecker, validatePriceFormat, GraphQLCustomError } from "../util/helper.js";
 import { clearImage, s3DeleteObject } from "../util/file-storage.js";
 
 const gameRentSchema = new Schema<IGameRent, IGameRentModel>({
@@ -39,30 +39,28 @@ gameRentSchema.static('newGameRent', async function (queryInput: IGameRent) {
     const inputValidation = [{ title: 2 > title.length }, { info: 5 > info.length }, { imageUrl: 1 > imageUrl.length }];
     inputValidation.forEach((e: any) => {
         const key = Object.keys(e)[0];
-        resolverErrorChecker({ condition: e[key], message: key === 'imageUrl' ? 'Image cannot be empty' : `${key} is too short!`, code: 422 });
+        errorChecker({ condition: e[key], message: key === 'imageUrl' ? 'Image cannot be empty' : `${key} is too short!`, code: 422 });
     });
 
-    resolverErrorChecker({
+    errorChecker({
         condition: validatePriceFormat(queryInput.rate),
         message: 'Invalid price format.\nToo many numbers after decimal point, expected two numbers or less :(',
         code: 422
     });
 
     // one-by-one input validation checking false value !value | !value using native if-check    //  ALT
-    // if (1 > title.length || 10 > info.length || 1 > imageUrl.length) {
-    //     const message = 1 > title.length ? 'Title is too short!' : 10 > info.length ? 'Info is too short' : 'ImageUrl cannot be empty!';
-    //     const error: { [key: string]: any } = new Error(message);
-    //     error.statusCode = 422;
-    //     throw error;
-    // }
+    if (1 > title.length || 10 > info.length || 1 > imageUrl.length) {
+        const message = 1 > title.length ? 'Title is too short!' : 10 > info.length ? 'Info is too short' : 'ImageUrl cannot be empty!';
+        throw new GraphQLCustomError(message, 422);
+    }
 
 
-    let prodCat = await Categories.find({ title: queryInput.category }).populate(`subcategoryData.${queryInput.subCategory}`).select('subcategoryData');
-    resolverErrorChecker({ condition: 1 > prodCat.length, message: 'Error: Category does NOT exist.', code: 422 });
+    let prodCat = await Category.find({ title: queryInput.category }).populate(`subcategoryData.${queryInput.subCategory}`).select('subcategoryData');
+    errorChecker({ condition: 1 > prodCat.length, message: 'Error: Category does NOT exist.', code: 422 });
 
 
 
-    await Product.findOneAndUpdate({ category: queryInput.category, subcategory: queryInput.subCategory, title: queryInput.title }, { rent: true });
+    await Product.findOneAndUpdate({ category: queryInput.category, subcategory: queryInput.subCategory, title: queryInput.title }, { $addToSet: { tags: 'rent' } });
 
     await GameRent.create(queryInput);
 
@@ -73,9 +71,9 @@ gameRentSchema.static('delGameRent', async function (id: string) {
 
     const foundGameRent = await this.findByIdAndDelete(id);
 
-    resolverErrorChecker({ condition: !foundGameRent, message: 'Content not found!', code: 404 });
+    errorChecker({ condition: !foundGameRent, message: 'Content not found!', code: 404 });
 
-    await Product.findOneAndUpdate({ category: foundGameRent!.category, subcategory: foundGameRent!.subCategory, title: foundGameRent!.title }, { rent: false });
+    await Product.findOneAndUpdate({ category: foundGameRent!.category, subcategory: foundGameRent!.subCategory, title: foundGameRent!.title }, { $pull: { tags: 'rent' } });
 
     if (isProductionEnv) {
         const fileKey = foundGameRent!.imageUrl.split('.com/')[1];

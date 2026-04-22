@@ -1,6 +1,7 @@
 import mongoose, { Types, Model } from 'mongoose';
-import { resolverErrorChecker } from '../util/helper.js';
+import { isProductionEnv, errorChecker } from '../util/helper.js';
 import validator from 'validator';
+import { clearImage, s3DeleteObject } from '../util/file-storage.js';
 
 
 const inAppNoticeSchema = new mongoose.Schema<IInAppNotice, InAppNoticeModel>({
@@ -20,8 +21,8 @@ const inAppNoticeSchema = new mongoose.Schema<IInAppNotice, InAppNoticeModel>({
             const content = input.content.trim();
             const imageUrl = input.imageUrl;
 
-            resolverErrorChecker({ condition: !validator.isLength(title, { min: 7, max: 50 }), message: 'Title length must between 7-50 characters long!', code: 422 });
-            resolverErrorChecker({ condition: !validator.isLength(content, { min: 10, max: 350 }), message: 'Description must be between 10-350 characters long!', code: 422 });
+            errorChecker({ condition: !validator.isLength(title, { min: 7, max: 50 }), message: 'Title length must between 7-50 characters long!', code: 422 });
+            errorChecker({ condition: !validator.isLength(content, { min: 10, max: 350 }), message: 'Description must be between 10-350 characters long!', code: 422 });
             await this.create({ title: title, content: content, imageUrl: imageUrl });
         },
         getAllDocs: async function () {
@@ -35,7 +36,16 @@ const inAppNoticeSchema = new mongoose.Schema<IInAppNotice, InAppNoticeModel>({
                     await this.deleteMany({});
                     break;
                 default:
-                    await this.findByIdAndDelete(id);
+
+                    const doc = await this.findByIdAndDelete(id);
+                    if (!doc || !doc.imageUrl) return;
+                    const fileKey = doc.imageUrl.split('.com/')[1];
+                    if (isProductionEnv) {
+                        await s3DeleteObject(fileKey);
+                    }
+                    else {
+                        await clearImage(doc.imageUrl);
+                    }
             }
         }
     }

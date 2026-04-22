@@ -11,9 +11,14 @@ export default async (req: any, res: any, next: any) => {
             return next();
         }
 
-        const user = req.user as HydratedDocument<UserData>;
+        let user = req.user as HydratedDocument<UserData>;
+        const userstatsData = User.updateUserStats(user.stats);
 
-        await User.updateUserStats(user);
+        user.stats = userstatsData.stats;
+
+        if (userstatsData.updatedStats) {
+            await user.save();
+        }
 
         next();
     } catch (err: any) {

@@ -83,7 +83,7 @@ export const createReqOrder = async (req: Request, res: Response, next: NextFunc
             total: price
         };
 
-        newOrder.save();
+        await newOrder.save();
 
         res.status(201).json({ orderInfo });
     } else {
@@ -103,7 +103,7 @@ export const createReqOrder = async (req: Request, res: Response, next: NextFunc
             subTotal: subTotal,
         };
 
-        // user.save(); // TODO: re add
+        await user.save();
 
         res.status(200).json({ orderInfo });
     }

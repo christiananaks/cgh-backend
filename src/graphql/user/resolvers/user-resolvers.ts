@@ -2,104 +2,44 @@
 import mongoose, { Types } from "mongoose";
 import validator from 'validator';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 
-import Post from "../../../models/post.js";
+import Post, { TComment } from "../../../models/post.js";
 import ServerMnt from "../../../models/serv-mnt.js";
 import { initializePayment } from "../../../util/order-payment.js";
 import User, { TShopProduct } from "../../../models/user.js";
-import { resolverErrorChecker, calPrice, createTokens, blacklistToken, resUserstats } from "../../../util/helper.js";
+import { errorChecker, calPrice, blacklistToken, resUserstats, GraphQLCustomError } from "../../../util/helper.js";
 import { CtxArgs, InputArgs } from "../../../models/type-def.js";
-import Product from '../../../models/product.js';
+import Product, { ProductData } from '../../../models/product.js';
 import Kyc from '../../../models/kyc.js';
 import Order from "../../../models/order.js";
 import Refund from "../../../models/refund.js";
 import Mailing, { primarySender } from "../../../models/mailing.js";
+import io from '../../../models/socket.js';
+import Category from "../../../models/category.js";
 
 
 
 const Query = {
-    getAuthUser: async (parent: any, { id }: InputArgs, { req }: CtxArgs) => {
-        const authHeader = req.get('Authorization');
-        resolverErrorChecker({ condition: !authHeader, message: 'Error: Auth error.', code: 401 });
-
-        const user = await User.findById(id);
-        resolverErrorChecker({ condition: !user, message: 'User not found :(', code: 404 });
-
-        let tokens: { accessToken: string, refreshToken: string } | null;
-        try {
-            // jwt.verify() throws an error where token is expired.
-            jwt.verify(user!.refreshToken!, `${process.env.REFRESH_TOKEN_PRIVATE_KEY}`);
-
-            const userstats = resUserstats(user!.stats);
-            tokens = createTokens(user!);
-
-            user!.refreshToken = tokens.refreshToken;
-            user!.save();
-
-            return {
-                accessToken: tokens!.accessToken, user: {
-                    ...user!._doc, stats: userstats, id: user!.id
-                }
-            };
-
-        } catch (err: any) {
-            const isTokenError = err.toString().toLowerCase().includes('expired');
-            if (isTokenError) {
-                const error: { [key: string]: any } = new Error('Expired token!');
-                error.statusCode = 401;
-                throw error;
-            }
-            throw err;
-        }
-    },
-    getRecommendedProducts: async (parent: any, { }, { req }: CtxArgs) => {
-        const { isAuth, user, currency } = req;
-
-
-        if (!isAuth || 1 > user.wishlist.length && 1 > user.purchaseHistory.length) {
-            return [];
-        }
-
-        const allProducts = await Product.find();
-        const purchaseCategories: { category: string, subcategory: string }[] = [];
-
-        // get categories from user purchase history
-
-        user.purchaseHistory.forEach((val) => {
-            if (val.products.length && val.products.length > 0) {
-                for (const obj of val.products as TShopProduct[]) {
-                    purchaseCategories.push({ category: obj.category, subcategory: obj.subcategory });
-                }
-            }
+    getAuthUser: async (parent: any, { }, { req }: CtxArgs) => {
+        const { isAuth, user } = req;
+        errorChecker({
+            condition: !isAuth,
+            code: 401,
+            message: 'Please login to continue'
         });
 
-        const populatedUser = (await user.populate('wishlist.productId')).wishlist;
+        const userstats = resUserstats(user!.stats);
+        return {
+            ...user!._doc,
+            stats: userstats,
+            userId: user!.id,
 
-        // get categories from user wishlist
-        populatedUser.forEach((e: any) => {
-            const foundIndex = purchaseCategories.findIndex(obj => obj.category === e.productId.category && obj.subcategory === e.productId.subcategory);
-            if (foundIndex < 0) {
-                purchaseCategories.push({ category: e.productId.category, subcategory: e.productId.subcategory });
-            }
-        });
-
-        const recProds = allProducts.filter((doc) => {
-            const foundCatHistory = purchaseCategories.findIndex((obj) => obj.category === doc.category && obj.subcategory === doc.subcategory);
-            if (foundCatHistory > -1) {
-                doc.price = calPrice(+doc.price, currency);
-                return true;
-
-            }
-
-            return false;
-        });
-
-        return recProds;
+            purchaseHistory: JSON.stringify(user.purchaseHistory),
+        };
     },
     showCart: async (parent: any, { }, { req }: CtxArgs) => {
         const { isAuth, userId, currency } = req;
-        resolverErrorChecker({ condition: !isAuth || !userId, code: 401, message: 'Please login to continue.' });
+        errorChecker({ condition: !isAuth || !userId, code: 401, message: 'Please login to continue.' });
         const cart = await User.getUserCart(userId, currency);
 
         return cart;
@@ -107,7 +47,7 @@ const Query = {
     getCheckout: async (parent: any, { }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, user, userId, currency } = req;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !isAuth,
             code: 401,
             message: 'Please login to continue'
@@ -154,7 +94,7 @@ const Query = {
         const { isAuth, user, guestUser } = req;
 
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !guestUser && !isAuth || !guestUser && !user,
             message: !isAuth ? 'Please login to continue.' : 'Invalid request :(',
             code: 401
@@ -194,12 +134,12 @@ const Query = {
     },
     getWishlist: async (parent: any, { }, { req }: CtxArgs) => {
         const { isAuth, user, currency } = req;
-        resolverErrorChecker({ condition: !isAuth || !user, code: 401, message: 'Please login to continue.' });
+        errorChecker({ condition: !isAuth || !user, code: 401, message: 'Please login to continue.' });
         return await user.getUserWishlist(currency);
     },
     getAccInfoSettings: async (parent: any, { }, { req }: CtxArgs) => {
         const { isAuth, user } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
 
 
         const accData = {
@@ -217,22 +157,22 @@ const Query = {
     },
     getUserOrders: async (parent: any, { }, { req }: CtxArgs) => {
         const { isAuth, userId } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
 
         return await User.getUserOrders(userId);
     },
     getUserOrder: async (parent: any, { orderId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, userId } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
         const orderDetails = await User.getUserOrderDetails(orderId, userId);
         return orderDetails;
     },
     getOrderRefund: async (parent: any, { orderId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
 
         let foundOrder = await Order.findById(orderId);
-        resolverErrorChecker({ condition: !foundOrder, message: 'Error: Order does not exists!', code: 404 });
+        errorChecker({ condition: !foundOrder, message: 'Error: Order does not exists!', code: 404 });
         foundOrder = foundOrder!;
 
 
@@ -246,12 +186,12 @@ const Query = {
     },
     getUserOrderRefundInfo: async (parent: any, { orderId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, userId } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
 
         console.log(new Types.ObjectId(orderId), userId);
         let foundRefund = await Refund.findOne({ orderInfo: new Types.ObjectId(orderId), 'userInfo.userId': userId }).populate('orderInfo', 'items product');
 
-        resolverErrorChecker({ condition: !foundRefund, message: 'Error: Refund not available!', code: 404 });
+        errorChecker({ condition: !foundRefund, message: 'Error: Refund not available!', code: 404 });
         foundRefund = foundRefund!;
 
         return {
@@ -274,22 +214,21 @@ const Query = {
 const Mutation = {
     addToCart: async (parent: any, { prodId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, userId, user } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to add to cart.', code: 403 });
+        errorChecker({ condition: !isAuth, message: 'Please login to add to cart.', code: 403 });
 
-        // const findUser = await User.findById(userId);
+
         const findProd = await Product.findById(prodId);
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !findProd,
             message: 'Product not found, please refresh page',
             code: 404
         });
 
-        // const user = findUser as UserData;
         const prod = findProd!;
 
 
-        // resolverErrorChecker({ condition: 1 > prod.stockQty, message: 'Product out of stock!' });
+        errorChecker({ condition: 1 > prod.stockQty, message: 'Product out of stock!' });
         const cartItemIndex = user.cart.findIndex(obj => obj.productId.toString() === prodId);
 
         // check if product already in user cart
@@ -304,9 +243,8 @@ const Mutation = {
         }
 
         if (user.accInfo.activityReg.includes('add-to-cart')) {
-            // update stats xp // remove activity from user activityReg
-
-            await user.updateOne({ 'stats.xp': user.stats.xp.value + 5 });
+            // update stats xp value and remove activity from user activityReg
+            await user.updateOne({ 'stats.xp.value': user.stats.xp.value + 5 });
             user.accInfo.activityReg = user.accInfo.activityReg.filter((activity: string) => activity !== 'add-to-cart');
         }
 
@@ -319,9 +257,9 @@ const Mutation = {
         const user = await User.findById(userId);
 
         if (!user || !cartObjId) {
-            const error: { [key: string]: any } = new Error(!user ? 'Unauthorized! please sign in again or refresh page.' : 'Cart item not found, please refresh page');
-            error.statusCode = !user ? 403 : 404;
-            throw error;
+            throw new GraphQLCustomError(
+                !user ? 'Unauthorized! please sign in again or refresh page.' : 'Cart item not found, please refresh page',
+                !user ? 403 : 404);
         }
 
         user.cart.pull(cartObjId);
@@ -332,48 +270,59 @@ const Mutation = {
 
     editWishlist: async (parent: any, { prodId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, user } = req;
-        resolverErrorChecker({ condition: !isAuth || !user, code: 401, message: 'Please login to continue.' });
+        errorChecker({ condition: !isAuth || !user, code: 401, message: 'Please login to continue.' });
         const result = await user.editUserWishlist(prodId);
         if (result.addedToWishlist && user.accInfo.activityReg.includes('add-to-wishlist')) {
             user.accInfo.activityReg = user.accInfo.activityReg.filter((activity: string) => activity !== 'add-to-wishlist');
-            await user.updateOne({ 'stats.xp': user.stats.xp.value + 5, 'accInfo.activityReg': user.accInfo.activityReg });
+            await user.updateOne({ 'stats.xp.value': user.stats.xp.value + 5, 'accInfo.activityReg': user.accInfo.activityReg });
         }
         return result;
     },
     postAddComment: async (parent: any, { postId, userComment }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, userId, user } = req;
-        resolverErrorChecker({ condition: !isAuth, code: 401, message: 'Please login to post comments.' });
+        errorChecker({ condition: !isAuth, code: 401, message: 'Please login to post comments.' });
         const post = await Post.findById(postId);
-        resolverErrorChecker({ condition: !post, code: 404, message: 'Post not found :(' });
+        errorChecker({ condition: !post, code: 404, message: 'Post not found :(' });
 
-        const commentData = {
+        const commentData: TComment = {
             userInfo: new mongoose.Types.ObjectId(userId),
-            comment: userComment
+            comment: userComment,
+            date: new Date()
         };
 
-        // give user 1xp if its the user first comment on the post
+        // when the user have not commented on the post before, give user 1xp
         let findComment = await Post.find();
         const commentIndex = findComment[0].comments.findIndex((comm) => comm.userInfo.id.toString() === userId);
         if (0 > commentIndex) {
             user.stats.xp.value++;
-            user.save();
+            await user.save();
         }
 
-        await post?.pushComment(commentData);
+        const newComment = await post?.pushComment(commentData);
+        io.getIO().emit('comment', {
+            action: 'create', data: {
+                commentId: newComment!._id!,
+                profilePic: user.profilePic,
+                username: user.username,
+                comment: commentData.comment,
+                date: commentData.date.toISOString()
+            }
+        });
+
         if (user.accInfo.activityReg.includes('add-comment')) {
             user.stats.xp.value = user.stats.xp.value + 5;
             user.accInfo.activityReg = user.accInfo.activityReg.filter((activity: string) => activity !== 'add-comment');
-            user.save();
+            await user.save();
         }
 
         return { success: true, message: 'Comment was added successfully' };
     },
     postEditComment: async (parent: any, { userComment, commentId, postId }: InputArgs, { req }: CtxArgs) => {
         const { isAuth } = req;
-        resolverErrorChecker({ condition: !isAuth, code: 401, message: 'Please login to continue' });
+        errorChecker({ condition: !isAuth, code: 401, message: 'Please login to continue' });
         const post = await Post.findById(postId).populate('comments.userInfo', 'profilePic username');
 
-        resolverErrorChecker({ condition: !post, code: 404, message: 'Post not found :(' });
+        errorChecker({ condition: !post, code: 404, message: 'Post not found :(' });
 
         try {
             const result = await post?.editComment(commentId, userComment);
@@ -385,9 +334,9 @@ const Mutation = {
     },
     postEditAccInfoSettings: async (parent: any, { accData }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, user } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
         if (accData.phone) {
-            resolverErrorChecker({
+            errorChecker({
                 condition: !validator.isMobilePhone(accData.phone, "en-NG"),
                 message: 'Invalid phone number',
                 code: 422
@@ -407,15 +356,15 @@ const Mutation = {
     },
     userPasswordUpdate: async (parent: any, { userQueryInput }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, user } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
         const oldPassword = userQueryInput.oldPassword;
         let newPassword = userQueryInput.newPassword;
         const confirmPassword = userQueryInput.confirmPassword;
 
         const verifyOldPw = await bcrypt.compare(oldPassword, user.password);
-        resolverErrorChecker({ condition: !verifyOldPw, message: 'Error: Old password is incorrect!', code: 500 });
+        errorChecker({ condition: !verifyOldPw, message: 'Error: Old password is incorrect!', code: 500 });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isStrongPassword(newPassword, {
                 minLength: 6,
                 minSymbols: 0,
@@ -427,13 +376,13 @@ const Mutation = {
         });
 
         const isSameAsOldPW = await bcrypt.compare(newPassword, user.password);
-        resolverErrorChecker({
+        errorChecker({
             condition: isSameAsOldPW,
             message: 'The entered new password has been previously used by you. Please create a different password',
             code: 422
         });
 
-        resolverErrorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do not match!', code: 422 });
+        errorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do not match!', code: 422 });
         try {
             newPassword = await bcrypt.hash(newPassword, 12);
             await Mailing.sendEmail(primarySender, user.email, 'Password Changed Successful', '<h1>Your password has been changed successfully!<h1/>');
@@ -445,7 +394,7 @@ const Mutation = {
         return { success: true, message: 'Password update succeeded.' };
     },
     deleteMyAcc: async (parent: any, { }, { req }: CtxArgs) => {
-        resolverErrorChecker({ condition: !req.isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !req.isAuth, message: 'Please login to continue.', code: 401 });
 
         try {
             await req.user.deleteOne();
@@ -458,21 +407,21 @@ const Mutation = {
     postOrderRefund: async (parent: any, { orderId, prodId, userQueryInput, imageUrls, amount }: InputArgs, { req }: CtxArgs) => {
 
         const { isAuth, userId, user } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
+        errorChecker({ condition: !isAuth, message: 'Please login to continue.', code: 401 });
 
         let foundOrder = await Order.findOne({ _id: new Types.ObjectId(orderId), "userInfo.userId": userId });
 
-        resolverErrorChecker({ condition: !foundOrder, message: 'Error: No existing order for item/user!', code: 404 });
+        errorChecker({ condition: !foundOrder, message: 'Error: No existing order for item/user!', code: 404 });
         foundOrder = foundOrder!;
 
         // validate other reason
         if (userQueryInput.otherReason) {
-            resolverErrorChecker({ condition: !validator.isLength(userQueryInput.otherReason, { min: 20, max: 500 }), message: 'Description length too short :(', code: 422 });
+            errorChecker({ condition: !validator.isLength(userQueryInput.otherReason, { min: 20, max: 500 }), message: 'Description length too short :(', code: 422 });
         }
 
         const foundRefund = await Refund.findOne({ orderInfo: new Types.ObjectId(orderId), prodId: undefined });
         // if found then we know refund exist for the whole order
-        resolverErrorChecker({ condition: foundRefund !== null, message: 'Refund already exist for this order.', code: 409 });
+        errorChecker({ condition: foundRefund !== null, message: 'Refund already exist for this order.', code: 409 });
 
         await Refund.create({
             userInfo: { userId: userId, email: user.email, username: user.username },
@@ -493,7 +442,7 @@ const Mutation = {
     },
     logout: async (parent: any, { }: InputArgs, { req }: CtxArgs) => {
         const { isAuth, role, user, userId } = req;
-        resolverErrorChecker({ condition: !isAuth, message: 'You are not logged in!', code: 500 });
+        errorChecker({ condition: !isAuth, message: 'You are not logged in!', code: 500 });
         await blacklistToken(req.token);
         user.refreshToken = undefined;
 

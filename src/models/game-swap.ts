@@ -1,6 +1,6 @@
 import mongoose, { Model, Schema } from "mongoose";
 
-import { allGenre, isProductionEnv, resolverErrorChecker, validatePriceFormat } from "../util/helper.js";
+import { allGenre, isProductionEnv, errorChecker, validatePriceFormat } from "../util/helper.js";
 import { TActionStatus } from "./type-def.js";
 import Product from "./product.js";
 import { clearImage, s3DeleteObject } from "../util/file-storage.js";
@@ -82,7 +82,7 @@ gameSwapSchema.index({ title: 1, platform: 1 }, { name: '_docEssential', unique:
 gameSwapSchema.statics.newGameSwap = async function (queryInput: IGameSwap) {
     const { title, genre, swapFee } = queryInput;
 
-    resolverErrorChecker({
+    errorChecker({
         condition: validatePriceFormat(swapFee),
         message: 'Invalid price format.\nToo many numbers after decimal point, expected two numbers or less :(',
         code: 422
@@ -92,16 +92,16 @@ gameSwapSchema.statics.newGameSwap = async function (queryInput: IGameSwap) {
     let allGenresCopy = new Set([...allGenre]);
     genre.forEach((word) => {
         allGenresCopy.add(word);
-        if (allGenresCopy.size > allGenre.size) {
-            const error: { [key: string]: any } = new Error(`Error: Invalid genre: ${word}`);
-            error.statusCode = 422;
-            throw error;
-        }
+        errorChecker({
+            condition: allGenresCopy.size > allGenre.size,
+            message: `Error: Invalid genre: ${word}`,
+            code: 422
+        });
     });
     /***************************************** */
 
-    // Update product swap value if prod exists /
-    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: queryInput.platform, title: queryInput.title }, { swap: true });
+    // Update product tags if prod exists /
+    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: queryInput.platform, title: queryInput.title }, { $addToSet: { tags: 'swap' } });
     /***************************************** */
 
     await this.create(queryInput);
@@ -112,10 +112,10 @@ gameSwapSchema.statics.newGameSwap = async function (queryInput: IGameSwap) {
 
 gameSwapSchema.statics.delGameSwap = async function (id) {
     const deletedDoc = await GameSwap.findByIdAndDelete(id);
-    resolverErrorChecker({ condition: !deletedDoc, message: 'Error: Content not found!', code: 404 });
+    errorChecker({ condition: !deletedDoc, message: 'Error: Content not found!', code: 404 });
 
-    /** Update product swap value if found */
-    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: deletedDoc!.platform, title: deletedDoc!.title }, { swap: false });
+    /** Update product tag if found */
+    await Product.findOneAndUpdate({ category: 'Game Disc', subcategory: deletedDoc!.platform, title: deletedDoc!.title }, { $pull: { tags: 'swap' } });
     /***************************************** */
 
     if (isProductionEnv) {

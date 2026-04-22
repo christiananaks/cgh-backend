@@ -1,7 +1,7 @@
 
 import express from 'express';
 
-import { CustomError, resolverErrorChecker } from '../util/helper.js';
+import { CustomError, errorChecker } from '../util/helper.js';
 import Mailing, { TEmailProps } from '../models/mailing.js';
 
 const router = express.Router();
@@ -12,11 +12,11 @@ router.post('/send/all-users', async (req: any, res, next) => {
     const { from, subject, content, kind } = req.body as TEmailProps;
 
     try {
-        resolverErrorChecker({ condition: !content.includes('<!DOCTYPE html>'), code: 422, message: 'Please enter a valid html content.' });
+        errorChecker({ condition: !content.includes('<!DOCTYPE html>'), code: 422, message: 'Please enter a valid html content.' });
 
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please login to continue.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please login to continue.' });
 
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'user is unauthorized.' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'user is unauthorized.' });
 
         const emailProps = { from, subject, content, kind };
 
@@ -37,8 +37,8 @@ router.post('/send/:mailId', async (req: any, res, next) => {
     try {
         const mailId = req.params.mailId;
 
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
 
         const queryRes = await Mailing.findById(mailId);
         if (!queryRes) {
@@ -61,8 +61,8 @@ router.post('/send/:mailId', async (req: any, res, next) => {
 
 router.get('/get/failed-mails', async (req: any, res, next) => {
     try {
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
         const queryRes = await Mailing.find();
         if (queryRes.length < 1) {
             return res.json([]);
@@ -83,8 +83,8 @@ router.get('/get/failed-mails', async (req: any, res, next) => {
 router.post('/clear-mail-history', async (req: any, res, next) => {
 
     try {
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to continue.' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
 
         await Mailing.deleteMany({});
 

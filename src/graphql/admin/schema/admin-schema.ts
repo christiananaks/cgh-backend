@@ -27,8 +27,7 @@ export default `#graphql
         condition: String!
         price: String!
         stockQty: Int!
-        swap: Boolean
-        rent: Boolean
+        tags: [String!]!
     }
 
     input SlideData {
@@ -46,6 +45,7 @@ export default `#graphql
         desc: String
         price: Float!
         stockQty: Int
+        tags: [String!]
     }
 
     type ProdStatus {
@@ -76,8 +76,8 @@ export default `#graphql
     }
 
     type PostData {
-        postId: ID!
-        postTitle: String!
+        id: ID!
+        text: String!
     }
 
     type PaymentInfo {
@@ -302,6 +302,11 @@ export default `#graphql
         imageUrl: String
     }
 
+    input PostInput {
+        text: String!
+        imageUrl: String
+    }
+
 
     type Query {
         getAccessKeys: AccessKeysInfo!
@@ -323,11 +328,12 @@ export default `#graphql
     }
 
     type Mutation {
-        createAdminUser(userQueryInput: UserInputData): UserData!
+        createAdminUser(userQueryInput: UserInputData): ActionStatus!
         createSlide(adminQueryInput: SlideData): Slide!
         createOrEditCategory(id: String, categoryTitle: String, subcategoryTitles: [String!]! ): ActionStatus!
         addProductToCategory(id: String!, categoryTitle: String!, subcategoryTitle: String! ): ActionStatus!
         createProduct(adminQueryInput: ProdData, prodId: String): ProdStatus!
+        editProductTags(id: ID!, keyword: String!): ActionStatus!
         createTrendingGame(trendingGameInput: TrendingGameData!): ActionStatus!
         deleteSlide(id: String!): Boolean
         deleteProduct(id: ID!): ActionStatus
@@ -336,7 +342,7 @@ export default `#graphql
         deleteAdminAccKeyword(keyword: String!): Boolean
         deleteUser(searchBy: String!, value: String!): ActionStatus
         clearAccessKeys: [String]!
-        createPost(postTitle: String!): ActionStatus!
+        createPost(adminQueryInput: PostInput!): ActionStatus!
         deletePost(postId: String!): ActionStatus!
         deleteComment(postId: ID!, commentId: ID!): ActionStatus!
         deleteOrder(orderId: String!): ActionStatus!

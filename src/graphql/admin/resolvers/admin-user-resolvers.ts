@@ -2,17 +2,17 @@ import fs from 'fs';
 import { readdir } from 'fs/promises';
 
 import validator from 'validator';
-import mongoose, { HydratedDocument } from 'mongoose';
+import mongoose, { HydratedDocument, Types } from 'mongoose';
 
 import { CtxArgs, InputArgs } from "../../../models/type-def.js";
 import User, { UserData } from "../../../models/user.js";
-import { resolverErrorChecker, orderEnums, validatePriceFormat, isProductionEnv, GraphQLCustomError, checkUserRole } from "../../../util/helper.js";
+import { errorChecker, orderEnums, validatePriceFormat, isProductionEnv, GraphQLCustomError, checkUserRole, calPrice } from "../../../util/helper.js";
 import { paths } from '../../../util/helper.js';
 import AdminKey from "../../../models/admin-keys.js";
 import { Slide, slidesFilePath } from "../../../models/slide.js";
 import { clearImage, s3DeleteObject } from "../../../util/file-storage.js";
 import Product, { ProductData } from '../../../models/product.js';
-import Categories from '../../../models/category.js';
+import Category from '../../../models/category.js';
 import { AdminArgs } from './super-user-resolver.js';
 import Post from '../../../models/post.js';
 import Order, { orderProgressOptions } from '../../../models/order.js';
@@ -27,27 +27,27 @@ import GameSwap, { IGameSwap } from '../../../models/game-swap.js';
 import GameRent from '../../../models/game-rent.js';
 import Mailing, { primarySender } from '../../../models/mailing.js';
 import InAppNotice from '../../../models/in-app-notice.js';
+import io from '../../../models/socket.js';
 
 
 const Query = {
     getAdminUsers: async (parent: any, { }, { req }: CtxArgs) => {
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
         const foundAdmins: UserData[] = await User.find({ 'accInfo.role': "admin" }).select('email username');
 
 
         return foundAdmins;
     },
     getAdminUserInfo: async (parent: any, { id }: AdminArgs, { req }: CtxArgs) => {
-        resolverErrorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
-        resolverErrorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
+        errorChecker({ condition: !req.isAuth, code: 401, message: 'Please sign-in to complete request' });
+        errorChecker({ condition: !['admin', 'superuser'].includes(req.role), code: 403, message: 'Unauthorized request.' });
         const foundAdmin: UserData | null = await User.findById(id);
 
         if (!foundAdmin) {
-            const error: any = new Error('User does not exist.');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('User does not exist.', 404);
         }
+
         // get the key
         const keys = await AdminKey.getAdminKeys();
         const index = keys.findIndex(data => data.user === foundAdmin.email);
@@ -69,10 +69,10 @@ const Query = {
         const searchVal: string = value.trim();
         checkUserRole(req);
 
-        resolverErrorChecker({ condition: !['userId', 'username', 'email'].includes(searchOption), message: 'Invalid search parameter.', code: 404 });
-        resolverErrorChecker({ condition: validator.isEmpty(searchVal), message: `${searchOption} is required.`, code: 422 });
+        errorChecker({ condition: !['userId', 'username', 'email'].includes(searchOption), message: 'Invalid search parameter.', code: 404 });
+        errorChecker({ condition: validator.isEmpty(searchVal), message: `${searchOption} is required.`, code: 422 });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: searchOption === 'userId' && searchVal.length !== 24 || searchOption === 'username' && 5 > searchVal.length || searchOption === 'email' && !validator.isEmail(searchVal),
             message: `Invalid ${searchOption}!`, code: 422
         });
@@ -90,9 +90,7 @@ const Query = {
                 break;
         }
         if (!user) {
-            const error: { [key: string]: any } = new Error('User not found.');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('User not found.', 404);
         }
 
         const accessKeys = await AdminKey.getAdminKeys();
@@ -113,14 +111,14 @@ const Query = {
     fetchPosts: async (parent: any, args: any, { req }: CtxArgs) => {
         checkUserRole(req);
 
-        let posts = await Post.find().select('postTitle');
+        let posts = await Post.find().select('text');
 
         if (!posts) {
             return [];
         }
 
         const postDocs = posts.map((post) => {
-            return { postId: post.id, ...post._doc }
+            return { id: post.id, ...post._doc }
         });
 
         return postDocs;
@@ -184,9 +182,7 @@ const Query = {
         const foundKyc: any = await Kyc.findById(id).populate('userId', '_id email');
 
         if (!foundKyc) {
-            const error: { [key: string]: any } = new Error('KYC not found :(');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('KYC not found :(', 404);
         }
         const kycDocs = [{ kind: foundKyc.validId.kind, file: foundKyc.validId.docUrl }, { kind: foundKyc.utilityBill.kind, file: foundKyc.utilityBill.docUrl }];
         return {
@@ -232,7 +228,7 @@ const Query = {
 const Mutation = {
     createProduct: async (parent: any, { adminQueryInput, prodId }: AdminArgs, { req }: CtxArgs) => {
         const { isAuth, userId, role } = req;
-        resolverErrorChecker({
+        errorChecker({
             condition: !isAuth || !['admin', 'superuser'].includes(role),
             code: !isAuth ? 401 : 403,
             message: !isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
@@ -246,37 +242,38 @@ const Mutation = {
         const desc = adminQueryInput.desc ? adminQueryInput.desc.trim() : null;
         const price = adminQueryInput.price;
         const condition = adminQueryInput.condition;
-        const stockQty = adminQueryInput.stockQty || undefined;   // when undefined the schema sets the default value for creating new products
+        const stockQty = adminQueryInput.stockQty || undefined;
+        const tags = adminQueryInput.tags;
         let isCreated = true;
         let isUpdated = false;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: validatePriceFormat(price),
             message: 'Invalid price format.\nToo many numbers after decimal point, expected two numbers or less :(',
             code: 422
         });
 
-        const allCategories = await Categories.find();
-        const foundCategory = allCategories.find((doc) => doc.title.toLowerCase() === category.toLowerCase());
-        resolverErrorChecker({ condition: !foundCategory, message: 'Oops! That category does not exists.', code: 404 });
-        resolverErrorChecker({ condition: !foundCategory!.subcategoryData.has(subcategory), message: 'Oops! That subcategory does not exists.', code: 404 });
+        const allCategory = await Category.find();
+        const foundCategory = allCategory.find((doc) => doc.title.toLowerCase() === category.toLowerCase());
+        errorChecker({ condition: !foundCategory, message: 'Oops! That category does not exists.', code: 404 });
+        errorChecker({ condition: !foundCategory!.subcategoryData.has(subcategory), message: 'Oops! That subcategory does not exists.', code: 404 });
 
 
-        resolverErrorChecker({
+        errorChecker({
             condition: validator.isEmpty(title) || !validator.isLength(title, { min: 5, max: 50 }),
             message: validator.isEmpty(title) ? 'Product title is required.' : 'Product title length must be between 5-80 characters',
             code: 422
         });
 
         if (desc) {
-            resolverErrorChecker({
+            errorChecker({
                 condition: validator.isEmpty(desc) || !validator.isLength(desc, { max: 300 }),
                 message: validator.isEmpty(desc) ? 'Product description is required.' : 'Description length must be below 300 characters',
                 code: 422
             });
         }
 
-        resolverErrorChecker({
+        errorChecker({
             condition: 0 > price, message: 'Invalid price! Number must be positive.', code: 422
         });
 
@@ -290,13 +287,14 @@ const Mutation = {
                 desc: desc,
                 price: price,
                 condition: condition,
-                stockQty: stockQty
+                stockQty: stockQty,
+                tags: tags
             });
 
             // if prodId already exist update product data
         } else {
             product = await Product.findById(prodId);
-            resolverErrorChecker({ condition: !product, message: 'Product was not found :(', code: 404 });
+            errorChecker({ condition: !product, message: 'Product was not found :(', code: 404 });
 
             product!.desc = desc || product!.desc;
             product!.price = price;
@@ -312,32 +310,37 @@ const Mutation = {
             await foundCategory!.addToCategory(savedProduct);
             foundCategory!.save();
         }
-
-        return { product: { ...savedProduct._doc, id: savedProduct.id }, isCreated: isCreated, isUpdated: isUpdated };
+        const res = { product: { ...savedProduct._doc, id: savedProduct.id }, isCreated: isCreated, isUpdated: isUpdated }
+        io.getIO().emit('products', { action: 'create', data: { ...res.product, price: calPrice(+savedProduct.price, req.currency).toString() } });
+        return res;
     },
     deleteProduct: async (parent: any, { id }: AdminArgs, { req }: CtxArgs) => {
-        resolverErrorChecker({
+        errorChecker({
             condition: !req.isAuth || !['admin', 'superuser'].includes(req.role),
             code: !req.isAuth ? 401 : 403,
             message: !req.isAuth ? 'Please login to continue.' : 'Error: Unauthorize request.'
         });
 
-        const foundProduct = await Product.findOne({ _id: id });
-        if (!foundProduct) {
-            const error: any = new Error('Product does not exists');
-            error.statusCode = 404;
-            throw error;
-        }
-        await foundProduct.deleteOne();
-        if (foundProduct.imageUrls.length > 0) {
 
-            const fileKey = foundProduct!.imageUrls[0].split('.com/')[1];
-            const prefix = fileKey.substring(0, fileKey.lastIndexOf("/")) + "/";
+        const foundProduct = await Product.findOne({ _id: id });
+
+        errorChecker({ condition: !foundProduct, message: 'Product does not exists', code: 404 });
+
+
+        await foundProduct!.deleteOne();
+
+        // const products = await Product.getProducts(req.currency);
+        io.getIO().emit('products', { action: 'delete', data: id });
+
+        if (foundProduct!.imageUrls.length > 0) {
+
             if (isProductionEnv) {
+                const fileKey = foundProduct!.imageUrls[0].split('.com/')[1];
+                const prefix = fileKey.substring(0, fileKey.lastIndexOf("/")) + "/";
                 await s3DeleteObject(prefix);
             }
             else {
-                const prodImageDir = foundProduct.imageUrls[0].substring(0, foundProduct.imageUrls[0].lastIndexOf('/'));
+                const prodImageDir = foundProduct!.imageUrls[0].substring(0, foundProduct!.imageUrls[0].lastIndexOf('/'));
                 fs.rm(`${prodImageDir}`, { recursive: true, force: true }, (err) => {
                     if (err) {
                         console.log(err.message);
@@ -346,24 +349,36 @@ const Mutation = {
             }
         }
 
-        const foundCategory = await Categories.findOne({ title: foundProduct.category });
-        const subcategoryProducts = foundCategory?.subcategoryData.get(foundProduct.subcategory);
+        return { success: true, message: `Product: ${foundProduct!.title} was successfully deleted.` };
+    },
+    editProductTags: async (parent: any, { id, keyword }: AdminArgs, { req }: CtxArgs) => {
+        checkUserRole(req);
+        try {
+            const tag = keyword.toLowerCase();
+            const foundProd = await Product.findById(id);
 
-        if (foundCategory && subcategoryProducts && subcategoryProducts.length > 0) {
-            const index = subcategoryProducts.indexOf(foundProduct._id) as number;
-            foundCategory?.subcategoryData.get(foundProduct.subcategory)?.splice(index, 1);
+            errorChecker({ condition: !foundProd, message: 'Product was not found!', code: 404 });
 
+            const foundTag = foundProd!.tags.includes(tag);
+            if (foundTag) {
+                await foundProd!.updateOne({ $pull: { tags: tag } });
+            } else {
+                await foundProd!.updateOne({ $push: { tags: tag } }, { runValidators: true });
+            }
+
+            return { success: true, message: `Product was ${foundTag ? 'unmarked' : 'marked'} as ${keyword}.` };
+        } catch (err: any) {
+            if (err.message?.includes('Validation failed')) {
+                throw new GraphQLCustomError('Invalid tag name.', 422);
+            }
+            throw err;
         }
-
-        foundCategory?.save();
-
-        return { success: true, message: `Product: ${foundProduct.title} was successfully deleted.` };
     },
     createOrEditCategory: async (parent: any, { id, categoryTitle, subcategoryTitles }: AdminArgs, { req }: CtxArgs) => {
 
         checkUserRole(req);
 
-        resolverErrorChecker({ condition: 1 > subcategoryTitles.length, message: 'Subcategory Titles cannot be empty!', code: 422 });
+        errorChecker({ condition: 1 > subcategoryTitles.length, message: 'Subcategory Titles cannot be empty!', code: 422 });
 
         const subCatData: Map<string, object[]> = new Map();
         subcategoryTitles.forEach(subcategoryTitle => {
@@ -374,12 +389,12 @@ const Mutation = {
 
 
         if (!id) {
-            await Categories.create({ title: (categoryTitle![0].toUpperCase() + categoryTitle!.substring(1)).trim(), subcategoryData: subCatData });
+            await Category.create({ title: (categoryTitle![0].toUpperCase() + categoryTitle!.substring(1)).trim(), subcategoryData: subCatData });
             return { success: true, message: `${categoryTitle} has been created.` };
         }
 
-        const category = await Categories.findById(id);
-        resolverErrorChecker({ condition: !category, message: 'Category not found :(', code: 404 });
+        const category = await Category.findById(id);
+        errorChecker({ condition: !category, message: 'Category not found :(', code: 404 });
 
         subcategoryTitles.forEach(subcategoryTitle => {
             subcategoryTitle = subcategoryTitle.toUpperCase();
@@ -393,45 +408,40 @@ const Mutation = {
     addProductToCategory: async (parent: any, { id, categoryTitle, subcategoryTitle }: AdminArgs, { req }: CtxArgs) => {
         checkUserRole(req);
 
-        resolverErrorChecker({ condition: !id, message: 'Product ID must be provided!', code: 422 });
+        errorChecker({ condition: !id, message: 'Product ID must be provided!', code: 422 });
 
-        if (!categoryTitle) {
-            const error: { [key: string]: any } = new Error('Category must be provided');
-            error.statusCode = 422;
-            throw error;
-        }
+        errorChecker({ condition: !categoryTitle, message: 'Category must be provided', code: 422 });
 
         if (categoryTitle && subcategoryTitle) {
-            let foundCategory = await Categories.findOne({ title: categoryTitle });
-            resolverErrorChecker({ condition: !foundCategory, message: 'Category not found :(', code: 404 });
+            let foundCategory = await Category.findOne({ title: categoryTitle });
+            errorChecker({ condition: !foundCategory, message: 'Category not found :(', code: 404 });
             foundCategory = foundCategory!;
             let foundSubcategory = foundCategory.subcategoryData.get(subcategoryTitle);
-            resolverErrorChecker({ condition: !foundSubcategory, message: `Subcategory: ${subcategoryTitle} does not exist!`, code: 404 });
+            errorChecker({ condition: !foundSubcategory, message: `Subcategory: ${subcategoryTitle} does not exist!`, code: 404 });
             foundSubcategory = foundSubcategory!;
 
             const isExistingProd = foundSubcategory.findIndex((obj) => String(obj.id) === id);
 
             if (isExistingProd > -1) {
-                throw new Error(`The added product already exists in ${subcategoryTitle} products list`);
+                throw new GraphQLCustomError(`The added product already exists in ${subcategoryTitle} products list`, 409);
             }
+
             foundSubcategory.push(new mongoose.Types.ObjectId(id!));
 
             foundCategory.save();
             return { success: true, message: `Product added to ${categoryTitle} > ${subcategoryTitle}` };
 
         } else {
-            const error: { [key: string]: any } = new Error(!categoryTitle ? 'Category title must be provided!' : 'Subcategory title must be provided!');
-            error.statusCode = 422;
-            throw error;
+            throw new GraphQLCustomError(!categoryTitle ? 'Category title must be provided!' : 'Subcategory title must be provided!', 422);
         }
     },
     deleteCategory: async (parent: any, { id }: AdminArgs, { req }: CtxArgs) => {
 
         checkUserRole(req);
 
-        const foundCategory = await Categories.findById(id);
+        const foundCategory = await Category.findById(id);
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !foundCategory,
             code: 404,
             message: 'Category does not exist :('
@@ -443,7 +453,7 @@ const Mutation = {
 
             for (const [key, val] of foundCategory!.subcategoryData) {
                 if (val.length > 0) {
-                    throw new Error(`Error: There are live products in this Category! Subcategory: ${key} has products.`);
+                    throw new GraphQLCustomError(`Error: There are live products in this Category! Subcategory: ${key} has products.`);
                 }
             }
         } else {
@@ -463,14 +473,14 @@ const Mutation = {
         const description = adminQueryInput.desc?.trim() || null;
         const creator = user.username;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: validator.isEmpty(title) || !validator.isLength(title, { min: 5, max: 50 }),
             message: validator.isEmpty(title) ? 'Slide title is required.' : 'Slide title must be between 5-50 characters',
             code: 422
         });
 
         if (description) {
-            resolverErrorChecker({
+            errorChecker({
                 condition: !validator.isLength(description, { min: 5, max: 300 }),
                 message: 'Description length must be between 5-300 characters',
                 code: 422
@@ -481,11 +491,7 @@ const Mutation = {
         const slides = await Slide.fetchSlides();
         if (slides.length > 0) {
             slides.forEach((slide) => {
-                if (slide.title === title) {
-                    const error: { [key: string]: any } = new Error('Slide already exists!');
-                    error.statusCode = 409;
-                    throw error;
-                }
+                errorChecker({ condition: slide.title === title, message: 'Slide already exists!', code: 409 });
             })
         }
 
@@ -552,12 +558,10 @@ const Mutation = {
         }
 
         if (!foundUser) {
-            const error: any = new Error('User does not exist.');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('User does not exist.', 404);
         }
 
-        resolverErrorChecker({ condition: foundUser.accInfo.role === 'superuser', code: 500, message: 'This user cannot be deleted. nkiti ta gbuo gi!' });
+        errorChecker({ condition: foundUser.accInfo.role === 'superuser', code: 500, message: 'This user cannot be deleted. nkiti ta gbuo gi!' });
         await foundUser.deleteOne();
 
 
@@ -579,18 +583,18 @@ const Mutation = {
             message: `${foundUser.username} has been successfully deleted.`
         }
     },
-    createPost: async (parent: any, { postTitle }: AdminArgs, { req }: CtxArgs) => {
-
+    createPost: async (parent: any, { adminQueryInput }: AdminArgs, { req }: CtxArgs) => {
+        const { text, imageUrl } = adminQueryInput;
         checkUserRole(req);
 
-        const title = postTitle.trim();
-        resolverErrorChecker({
-            condition: validator.isEmpty(title) || !validator.isLength(title, { min: 10, max: 300 }),
-            message: validator.isEmpty(title) ? 'Post title is required' : 'Post title length should be between 10-300 characters',
+        const postText = text.trim();
+        errorChecker({
+            condition: validator.isEmpty(postText) || !validator.isLength(postText, { min: 10, max: 300 }),
+            message: validator.isEmpty(postText) ? 'Post text is required' : 'Post text length should be between 10-300 characters',
             code: 422
         });
 
-        const post = new Post({ postTitle: title });
+        const post = new Post({ text: postText, imageUrl: imageUrl });
         await post.save();
         return { success: true, message: 'Post created successfully.' };
     },
@@ -599,7 +603,7 @@ const Mutation = {
         checkUserRole(req);
 
         try {
-            await Post.deleteFeedPost(postId);
+            await Post.deletePost(postId);
             return { success: true, message: 'Post deleted successfully.' };
         } catch (err: any) {
             console.log(err.message);
@@ -611,12 +615,12 @@ const Mutation = {
         checkUserRole(req);
         const post = await Post.findById(postId).populate('comments.userInfo', 'profilePic username');
         if (!post) {
-            const error: { [key: string]: any } = new Error('Post not found :(');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('Post not found :(', 404);
         }
         try {
-            post.comments.pull(new mongoose.Types.ObjectId(commentId));
+            const comment = post.comments.find((comment) => comment._id?.toString() == commentId);
+            errorChecker({ condition: !comment, message: 'Comment was not found!', code: 404 });
+            post.comments.pull(comment!._id!);
             await post.save();
             return { success: true, message: 'Comment has been deleted.' };
         } catch (err: any) {
@@ -637,13 +641,11 @@ const Mutation = {
             const order = await Order.findById(orderId);
 
             if (!order) {
-                const error: { [key: string]: any } = new Error('Order was not found :(');
-                error.statusCode = 404;
-                throw error;
+                throw new GraphQLCustomError('Order was not found :(', 404);
             }
 
             const orderStatus = orderEnums.find(progress => progress.toLowerCase() === (orderProgress = orderProgress.toLowerCase().trim()));
-            resolverErrorChecker({ condition: !orderStatus, message: `ERROR: Invalid input! [${orderProgress}]`, code: 422 });
+            errorChecker({ condition: !orderStatus, message: `ERROR: Invalid input! [${orderProgress}]`, code: 422 });
 
             await order.updateOrderDoc(orderProgress, orderStatus);
 
@@ -665,13 +667,13 @@ const Mutation = {
         const genre = trendingGameInput.genre
 
         const existing = await TrendingGames.exists({ title: title });
-        resolverErrorChecker({ condition: existing !== null, message: 'Game already exists!', code: 409 });
+        errorChecker({ condition: existing !== null, message: 'Game already exists!', code: 409 });
 
         let platformData: string[] | undefined;
         if (platform) {
             const platformCategories = ['PS5', 'PS4', 'NINTENDO SWITCH', 'XBOX SERIES', 'XBOX ONE', 'MICROSOFT WINDOWS'];
             platformData = platform.split(', ').map(str => str.trim()).filter(str => platformCategories.includes(str));
-            resolverErrorChecker({ condition: 1 > platformData.length, message: 'Invalid input: Please enter a valid platform', code: 422 });
+            errorChecker({ condition: 1 > platformData.length, message: 'Invalid input: Please enter a valid platform', code: 422 });
         }
 
         await TrendingGames.create({
@@ -688,11 +690,20 @@ const Mutation = {
     deleteTrendingGame: async (parent: any, { id }: AdminArgs, { req }: CtxArgs) => {
         checkUserRole(req);
         try {
-            const foundGame = await TrendingGames.findByIdAndDelete(id);
-            if (foundGame?.$isDeleted()) {
-                // delete pics
+
+            const foundGame = await TrendingGames.findById(id);
+            errorChecker({ condition: !foundGame, message: 'Document not found in Collection.', code: 404 });
+
+            const result = await foundGame!.deleteOne();
+            errorChecker({ condition: !result.acknowledged, message: 'Document was not deleted!', code: 500 });
+
+            if (isProductionEnv) {
+                const fileKey = foundGame!.imageUrl.split('.com/')[1];
+                await s3DeleteObject(fileKey);
+            } else if (!isProductionEnv) {
+                await clearImage(foundGame!.imageUrl);
             }
-            console.log(foundGame?.$isDeleted(true));
+
             return { success: true, message: 'Game has been deleted successfully.' };
         } catch (err: any) {
             throw err;
@@ -721,7 +732,7 @@ const Mutation = {
 
         checkUserRole(req);
         const user = await User.findById(userId);
-        resolverErrorChecker({
+        errorChecker({
             condition: !user || user!.accInfo.kycStatus !== 'pending',
             message: !user ? 'User not found :(' : 'KYC has already been reviewed.',
             code: !user ? 404 : 500
@@ -729,7 +740,7 @@ const Mutation = {
 
 
         const kyc = await Kyc.findById(id);
-        resolverErrorChecker({ condition: !kyc, message: 'KYC not found :(', code: 404 });
+        errorChecker({ condition: !kyc, message: 'KYC not found :(', code: 404 });
         if (action === 'Reject') {
             user!.accInfo.kycStatus = 'Unsuccessful';
             kyc!.status = 'Unsuccessful';
@@ -761,27 +772,27 @@ const Mutation = {
         const price = adminQueryInput.price;
         const homeService = adminQueryInput.homeService;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: validatePriceFormat(price),
             message: 'Invalid price format.\nToo many numbers after decimal point, expected two numbers or less :(',
             code: 422
         });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isLength(title, { min: 8 }),
             message: 'Title length too short; Must be greater than 7 characters',
             code: 422
         });
 
-        resolverErrorChecker({ condition: 1 > gameList.length, message: 'Game list cannot be empty.', code: 422 });
+        errorChecker({ condition: 1 > gameList.length, message: 'Game list cannot be empty.', code: 422 });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: desc != null && !validator.isLength(desc, { min: 12, max: 800 }),
             message: (desc || '').length < 12 ? "Description is too short!" : "Description must be between 12-800 characters long.",
             code: 422
         });
         const foundGameDownload = await GameDownload.findOne({ title: title });
-        resolverErrorChecker({ condition: foundGameDownload !== null, message: 'Game Download already exists!', code: 409 });
+        errorChecker({ condition: foundGameDownload !== null, message: 'Game Download already exists!', code: 409 });
 
         await GameDownload.create({
             title: title,
@@ -844,7 +855,7 @@ const Mutation = {
 
         // update currency if exists else create
         const foundCurrency = await Currency.findOne({ currency: currencyOption });
-        resolverErrorChecker({ condition: !foundCurrency, message: 'Currency does not exist in database!', code: 404 });
+        errorChecker({ condition: !foundCurrency, message: 'Currency does not exist in database!', code: 404 });
 
         const currencyData: IOptions['defaultCurrency'] = { currencyTitle: currencyOption, currency: foundCurrency!._id };
 
@@ -873,13 +884,13 @@ const Mutation = {
         const price = adminQueryInput.price;
         const duration = adminQueryInput.duration;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isLength(title, { min: 6 }),
             message: 'Title length is too short!',
             code: 422
         });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: validatePriceFormat(price),
             message: 'Invalid price format.\nToo many numbers after decimal point, expected two numbers or less :(',
             code: 422
@@ -921,7 +932,7 @@ const Mutation = {
         checkUserRole(req);
 
         const foundRefund = await Refund.findById(id);
-        if (!foundRefund) throw new Error('ERROR: Refund not found!');
+        if (!foundRefund) throw new GraphQLCustomError('ERROR: Refund not found!');
 
         foundRefund.progress = progress;
 

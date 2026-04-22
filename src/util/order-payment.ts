@@ -72,7 +72,7 @@ export async function paystackVerifyPayment(reference: string) {
         return { verified: resData.status, accepted: isSuccessful, data: data }
     } catch (err: any) {
         console.log(err.message);
-        // throw new Error(err.message);
+
         const error: any = new Error(err.message);
         error.statusCode = 500;
         return { error: error };
@@ -148,7 +148,7 @@ export async function createOrder(orderArgObj: IOrderArgObject): Promise<TOrderI
             total: paymentData!.amount
         };
 
-        // req.user.cart.splice(0); // TODO uncomment line
+        req.user.cart.splice(0);
         return orderInfo;
     }
 }

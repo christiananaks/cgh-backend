@@ -7,6 +7,21 @@ export default `#graphql
         creator: String!
     }
 
+    type Comment {
+        commentId: ID!
+        profilePic: String
+        username: String!
+        comment: String!
+        date: String!
+    }
+
+    type Post {
+        id: ID!
+        text: String!
+        imageUrl: String
+        comments: [Comment!]!
+    }
+
     type MyGames {
         category: String!
         names: [String!]!
@@ -15,20 +30,6 @@ export default `#graphql
     input MyGamesInput {
         category: String!
         names: [String!]!
-    }
-    
-    type UserData {
-        id: ID!
-        profilePic: String
-        firstName: String!
-        lastName: String!
-        username: String!
-        email: String!
-        password: String!
-        stats: UserStats!
-        accInfo: AccInfo!
-        myGames: [MyGames!]!
-        purchaseHistory: String
     }
 
     input UserInputData {
@@ -59,6 +60,7 @@ export default `#graphql
         stats: UserStats!
         accInfo: AccInfo!
         myGames: [MyGames!]!
+        wishlist: [String!]!
         purchaseHistory: String
         accessToken: String!
         refreshToken: String!
@@ -119,15 +121,16 @@ export default `#graphql
         login(email: String!, password: String!): AuthData!
         getUsernames: [String!]!
         getAllProducts: [Product!]!
+        getRecommendedProducts(prodId: String!): [Product!]!
+        filterProductsByTag(tag: String!): [Product!]!
         getProduct(prodId: String!): Product!
         getCatProducts(catTitle: String!): [Product!]!
         getAllCategories: [CatData!]!
-        getPost: Post!
+        getPost: Post
         resetPassword(email: String!): ActionStatus!
         getTrendingGames: [TrendingGame!]!
         getTopRatedGames: [Product!]!
         getTodayDeals: [Product!]!
-        getPopularOffers: [Product!]!
         getGameDownloads: [GameDownload!]!
         getGameDownloadPackage(platform: String!, version: String, serialNumber: String): [GameDownload!]!
         getGameRepairs: [GameRepair!]!

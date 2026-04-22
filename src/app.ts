@@ -24,6 +24,8 @@ import createPodOrder, { createReqOrder } from './routes/create-order.js';
 import User from './models/user.js';
 import { createSuperUser } from './util/helper.js';
 import { CtxArgs } from './models/type-def.js';
+import io from './models/socket.js';
+
 
 
 const app = express();
@@ -33,13 +35,21 @@ const apolloServer = new ApolloServer({
     plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
     csrfPrevention: false,
     formatError: (formattedError, err) => {
+        let message = formattedError.message;
+        let httpStatus = formattedError.extensions?.httpStatus as number | undefined;
+
 
         console.log(formattedError);
 
+        // where the error object was not your Custom Error object thrown by you or was thrown as Server side error [500]
+        if (!httpStatus || httpStatus >= 500) {
+            message = 'Internal server error occurred.';
+        }
+
         return {
-            message: formattedError.message,
+            message: message,
             code: formattedError.extensions?.code,
-            httpStatus: formattedError.extensions?.httpStatus || 500,
+            httpStatus: httpStatus || 500,
             path: formattedError.path
         }
     }
@@ -78,7 +88,6 @@ app.use('/graphiql', graphiql({
     defaultQuery: `query Query {
 login(email: "test@test.com", password: "") {
 accessToken
-role
 }
 }`
 }));
@@ -99,10 +108,11 @@ app.use((error: { message: string, statusCode: number }, req: Request, res: Resp
 });
 
 
-mongoose.connect(`mongodb+srv://${process.env.CONNECTION_STRING}?retryWrites=true`).then((conn) => {
+mongoose.connect(`mongodb+srv://${process.env.CONNECTION_STRING}?retryWrites=true`, { connectTimeoutMS: 3000 * 60 }).then((conn) => {
     console.log('connected!');
     const server = app.listen(process.env.PORT || 8080);
-
+    const socketIO = io.init(server);
+    socketIO.on('connection', (socket) => { console.log('Client connected!'); });
     User.findOne({ 'accInfo.role': 'superuser' }).then(user => {
         if (!user && process.env.SU_PASSWORD) {
             createSuperUser(process.env.SU_PASSWORD).catch(err => console.log(err.toString()));

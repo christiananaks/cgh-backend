@@ -18,6 +18,7 @@ export interface CtxArgs {
 
 export interface InputArgs {
     id: string;
+    tag: string;
     checkoutOrderType: string;
     payOnDelivery: { status: boolean, totalAmount: string | null };
     orderId: string;

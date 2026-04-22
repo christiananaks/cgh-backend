@@ -12,11 +12,11 @@ import tldList from 'tld-list';
 
 import Product, { ProductData } from "../../models/product.js";
 import { CtxArgs, InputArgs } from "../../models/type-def.js";
-import Categories from "../../models/category.js";
+import Category from "../../models/category.js";
 import Post from "../../models/post.js";
 import User, { AccountInfo } from "../../models/user.js";
 import AdminKey, { AccessData, accessKeysFile } from '../../models/admin-keys.js';
-import { GraphQLCustomError, activityReg, calPrice, createTokens, isProductionEnv, resUserstats, resolverErrorChecker } from '../../util/helper.js';
+import { GraphQLCustomError, activityReg, calPrice, createTokens, isProductionEnv, resUserstats, errorChecker } from '../../util/helper.js';
 import ResetPassword from '../../models/reset-password.js';
 import TrendingGames from '../../models/trending-games.js';
 import GameDownload from '../../models/game-download.js';
@@ -43,28 +43,22 @@ const Query = {
         const enteredEmail = email.trim().toLowerCase();
         const enteredPassword = password;
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isEmail(enteredEmail) || !tldList.includes(enteredEmail.split('.').pop()),
             message: 'Email address is invalid.',
             code: 422
         });
 
-        resolverErrorChecker({ condition: validator.isEmpty(enteredPassword) || !validator.isLength(enteredPassword, { min: 6 }), message: 'Password too short.', code: 422 });
+        errorChecker({ condition: validator.isEmpty(enteredPassword) || !validator.isLength(enteredPassword, { min: 6 }), message: 'Password too short.', code: 422 });
         let foundUser = await User.findOne({ email: enteredEmail });
 
-        if (!foundUser) {
-            const error = new Error('The entered email or password is incorrect.');
-            Object.assign(error, { statusCode: 401 });
-            throw error;
-        }
 
-        const matchPw = await bcrypt.compare(enteredPassword, foundUser!.password);
+        errorChecker({ condition: !foundUser, message: 'The entered email or password is incorrect.', code: 401 });
+        foundUser = foundUser!;
 
-        if (!matchPw) {
-            const error: { [key: string]: any } = new Error('The entered username or password is incorrect.');
-            error.statusCode = 401;
-            throw error;
-        }
+        const matchPw = await bcrypt.compare(enteredPassword, foundUser.password);
+
+        errorChecker({ condition: !matchPw, message: 'The entered username or password is incorrect.', code: 401 });
         const accessData = await AdminKey.getAdminKeys();
         const matchedKeyIndex = accessData.findIndex(data => data.access === foundUser!.username.slice(foundUser!.username.length - 5));
         const creator = foundUser.accInfo.creator === 'superuser';
@@ -74,29 +68,29 @@ const Query = {
             foundUser.accInfo.role = 'standard';
         }
 
-        const { stats } = foundUser;
-
-        const userstatsData = resUserstats(stats);
-
         const tokens = createTokens(foundUser!);
 
         foundUser.refreshToken = tokens.refreshToken;
 
-        foundUser = await foundUser.save();
+        foundUser.stats = User.updateUserStats(foundUser!.stats).stats;
 
+        const updatedUserData = await foundUser.save();
+        const userstatsData = resUserstats(updatedUserData.stats);
 
         return {
-            userId: foundUser.id, ...foundUser._doc, stats: userstatsData, purchaseHistory: JSON.stringify(foundUser.purchaseHistory),
+            userId: updatedUserData.id, ...updatedUserData._doc, stats: userstatsData, purchaseHistory: JSON.stringify(updatedUserData.purchaseHistory),
             accessToken: tokens.accessToken, refreshToken: tokens.refreshToken
         };
 
     },
     getToken: async (parent: any, { }, { req }: CtxArgs) => {
         const authHeader = req.get('Authorization');
-        resolverErrorChecker({ condition: !authHeader, message: 'Error: Invalid token!', code: 401 });
+
+        errorChecker({ condition: !authHeader, message: 'Error: Invalid token!', code: 401 });
         const refreshToken = authHeader!.split(' ')[1];
+        console.log('token from device---', refreshToken.slice(refreshToken.length - 10));
         const foundUser = await User.findOne({ refreshToken: refreshToken });
-        resolverErrorChecker({ condition: !foundUser, message: 'Error: Invalid token!', code: 401 });
+        errorChecker({ condition: !foundUser, message: 'Error: Invalid token!', code: 401 });
         try {
             jwt.verify(foundUser!.refreshToken!, process.env!.REFRESH_TOKEN_PRIVATE_KEY!);
         } catch (err: any) {
@@ -116,7 +110,7 @@ const Query = {
 
     resetPassword: async (parent: any, { email }: InputArgs, { }: CtxArgs) => {
         const userEmail = email.trim().toLowerCase();
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isEmail(userEmail, {
                 allow_underscores: true,
             }) || !tldList.includes(email.split('.').pop()),
@@ -124,7 +118,7 @@ const Query = {
             code: 422
         });
         const foundUser = await User.findOne({ email: userEmail });
-        resolverErrorChecker({ condition: !foundUser, message: `Sorry we could not find an account linked to the entered email: ${userEmail}.`, code: 404 });
+        errorChecker({ condition: !foundUser, message: `Sorry we could not find an account linked to the entered email: ${userEmail}.`, code: 404 });
 
         var token;
         try {
@@ -164,24 +158,38 @@ const Query = {
     },
     getAllCategories: async (parent: any, { }: InputArgs) => {
 
-        return await Categories.getDbCategories();
+        return await Category.getDbCategories();
     },
 
     getAllProducts: async (parent: any, { }, { req }: CtxArgs) => {
         const currency = req.currency as ICurrency;
-        let products = await Product.getProducts();
-        if (currency.currency === 'USD') {
-            return products;
+        let products = await Product.getProducts(currency);
+        return products;
+    },
+    getRecommendedProducts: async (parent: any, { prodId }: InputArgs, { req }: CtxArgs) => {
+        const { currency } = req;
 
-        } else {
-            products = products.map((prod) => {
-                const price = calPrice(+prod.price, currency);
-                return { ...prod, price: price.toString() };
+        let foundProd = await Product.findById(prodId);
+        errorChecker({ condition: !foundProd, message: 'Product was not found!', code: 404 });
+        foundProd = foundProd!;
 
-            });
+        let foundCategory = await Category.findOne({ title: foundProd.category, [`subcategoryData.${foundProd.subcategory}`]: { $exists: true } })
+            .populate(`subcategoryData.${foundProd.subcategory}`);
+        errorChecker({ condition: !foundCategory, message: 'Category/Subcategory not found!', code: 404 });
 
-            return products;
-        }
+        foundCategory = foundCategory!;
+        let products: ProductData[] = (foundCategory.subcategoryData.get(foundProd.subcategory)! as any);
+
+        // return all product except the product the user is viewing
+        products = products.filter((prod) => prod.id !== prodId);
+
+        const result = products.map((prod) => {
+
+            const price = calPrice(+prod.price, currency);
+            return { id: (prod as any)._id.toString(), ...prod._doc, price: price.toString() };
+        });
+
+        return result;
     },
     getProduct: async (parent: any, { prodId }: InputArgs, { req }: CtxArgs) => {
 
@@ -189,7 +197,7 @@ const Query = {
     },
     getCatProducts: async (parent: any, { catTitle }: CatParentData, { req }: CtxArgs) => {
         const currency = req.currency as ICurrency;
-        let catProducts = await Categories.getCategoryProds(catTitle, currency);
+        let catProducts = await Category.getCategoryProds(catTitle, currency);
 
 
         return catProducts;
@@ -204,7 +212,7 @@ const Query = {
     },
     getTopRatedGames: async (parent: any, args: InputArgs, { req }: CtxArgs) => {
         const currency = req.currency;
-        const gameDiscProds = await Categories.getCategoryProds('Game Disc', currency);
+        const gameDiscProds = await Category.getCategoryProds('Game Disc', currency);
         const topRatedGames = await TrendingGames.find({ rating: { $gt: 3 } });
 
         if (1 > gameDiscProds.length && 1 > topRatedGames.length) {
@@ -222,7 +230,7 @@ const Query = {
     },
     getTodayDeals: async (parent: any, { }, { req }: CtxArgs) => {
         const currency = req.currency;
-        const categoryProducts = await Categories.find().populate('subcategoryData.$*');
+        const categoryProducts = await Category.find().populate('subcategoryData.$*');
 
         const filteredProds: ProductData[] = [];
         categoryProducts.forEach((doc) => {
@@ -242,11 +250,11 @@ const Query = {
 
         return filteredProds;
     },
-    getPopularOffers: async (parent: any, { }, { req }: CtxArgs) => {
+    filterProductsByTag: async (parent: any, { tag }: InputArgs, { req }: CtxArgs) => {
         const currency = req.currency;
-        let popularProd = await Categories.getCategoryProds('Popular', currency);
+        let products = await Product.getProducts(currency, tag.toLowerCase());
 
-        return popularProd;
+        return products;
     },
     getGameDownloads: async (parent: any, { }, { req }: CtxArgs) => {
         let gameDownloads = await GameDownload.find();
@@ -267,15 +275,15 @@ const Query = {
         if (platform === "NINTENDO SWITCH" && serialNumber) {
             const validSN = ['XAW', 'XAJ'];
 
-            resolverErrorChecker({ condition: !validator.isLength(serialNumber, { min: 14, max: 14 }), message: 'Incorrect serial number!', code: 422 });
+            errorChecker({ condition: !validator.isLength(serialNumber, { min: 14, max: 14 }), message: 'Incorrect serial number!', code: 422 });
 
-            resolverErrorChecker({ condition: !validSN.includes(serialNumber.slice(0, 3).toUpperCase()), message: 'Unsupported Model.', code: 500 });
+            errorChecker({ condition: !validSN.includes(serialNumber.slice(0, 3).toUpperCase()), message: 'Unsupported Model.', code: 500 });
 
             const snData: Map<string, number> = new Map([['XAW1', 1007800], ['XAW4', 4001100], ['XAW7', 7001780], ['XAJ1', 1003000], ['XAJ4', 4005000], ['XAJ7', 7004000]]);
             serialNumber = serialNumber.slice(0, 10);   // shortened serialNumber to 10 chars 
             const sn = +serialNumber.substring(3);  // extract 7 digit numbers after the starting word `XA(X)` of entered serialNumber 
 
-            resolverErrorChecker({ condition: sn > snData.get(serialNumber.slice(0, 4).toUpperCase())!, message: 'Not hackable.', code: 500 });
+            errorChecker({ condition: sn > snData.get(serialNumber.slice(0, 4).toUpperCase())!, message: 'Not hackable.', code: 500 });
 
             dlBundles = await GameDownload.find({ platform: platform });
 
@@ -329,9 +337,7 @@ const Query = {
 
         const swapDeal = await GameSwap.findById(id);
         if (!swapDeal) {
-            const error: { [key: string]: any } = new Error('Error: Content not found!');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('Error: Content not found!', 404);
         }
 
         return { ...swapDeal._doc, swapFee: calPrice(swapDeal.swapFee, req.currency), id: swapDeal.id };
@@ -351,7 +357,7 @@ const Query = {
     gameRentInfo: async (parent: any, { id }: InputArgs, { req }: CtxArgs) => {
         const foundGameRent = await GameRent.findById(id);
 
-        resolverErrorChecker({ condition: !foundGameRent, message: 'Game Rent not found :(', code: 404 });
+        errorChecker({ condition: !foundGameRent, message: 'Game Rent not found :(', code: 404 });
 
         return { ...foundGameRent!._doc, rate: calPrice(foundGameRent!.rate, req.currency), id: foundGameRent!.id }
 
@@ -383,26 +389,26 @@ const Mutation = {
         const gamingId = userQueryInput.gamingIdHandle ? { gamingIdHandle: userQueryInput.gamingIdHandle, platform: userQueryInput.platform } : null;
         const myGames = userQueryInput.myGames || [];
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isAlpha(firstName[0]) || !validator.isLength(firstName, { min: 3, max: 16 }),
             message: "Invalid input: 'Firstname'",
             code: 422
         });
 
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isAlpha(lastName[0]) || !validator.isLength(lastName, { min: 3, max: 16 }),
             message: "Invalid input: 'Lastname'",
             code: 422
         });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: username.includes(' ') || !validator.isLength(username, { min: 5, max: 16 }),
             message: username.includes(' ') ? 'Invalid username: blankspace(s) detected!' : 'Invalid input: No of characters must between 5-16 letters.',
             code: 422
         });
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isEmail(email, {
                 allow_underscores: true,
             }) || !tldList.includes(email.split('.').pop()),
@@ -411,14 +417,14 @@ const Mutation = {
         });
 
         if (phone) {
-            resolverErrorChecker({
+            errorChecker({
                 condition: !validator.isMobilePhone(phone, "en-NG"),
                 message: 'Invalid phone number.',
                 code: 422
             });
         }
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isStrongPassword(password, {
                 minLength: 6,
                 minSymbols: 0,
@@ -434,16 +440,10 @@ const Mutation = {
         try {
             if (existingUser) {
                 const isSameEmail = existingUser.email === email;
-                const err = new Error(isSameEmail ? 'User already exists!' : 'Phone number already exists!');
-                Object.assign(err, { statusCode: 422 });
-                throw err;
+                throw new GraphQLCustomError(isSameEmail ? 'User already exists!' : 'Phone number already exists!', 422);
             }
 
-            if (password !== userQueryInput.confirmPassword) {
-                const err = new Error('Passwords do not match!');
-                Object.assign(err, { statusCode: 422 });
-                throw err;
-            }
+            errorChecker({ condition: password !== userQueryInput.confirmPassword, message: 'Passwords do not match!', code: 422 });
 
             const hashedPw = await bcrypt.hash(password, 12);
 
@@ -497,16 +497,11 @@ const Mutation = {
                 const errRes = err.errorResponse;
                 const field = Object.keys(errRes.keyValue)[0];
 
-                error = new Error(`${field} already exists`);
-                error.statusCode = 409;
-                throw error;
+                throw new GraphQLCustomError(`${field} already exists`, 409);
 
             } else if (err.errorResponse) {  // other mongodb database error
-                error = new Error(`An error occurred. Info: ${err.message}`);
-                error.statusCode = 500;
-                throw error;
+                throw new GraphQLCustomError(`An error occurred. Info: ${err.message}`);
             }
-            // console.log('original mongoose error:', '\n\r', err._message, err.errors[Object.keys(err.errors)[0]]['properties']['message'], '\n');
 
             err.statusCode = err.statusCode || 500;
             throw err;
@@ -516,16 +511,14 @@ const Mutation = {
         // token is reset password token received in user email.
         const { userId, token, newPassword, confirmPassword } = userQueryInput;
         const foundToken = await ResetPassword.findOne({ token: token });
-        resolverErrorChecker({ condition: !foundToken, message: 'Reset password token expired. Please go back to Reset Password page to attempt the process again.', code: 404 });
+        errorChecker({ condition: !foundToken, message: 'Reset password token expired. Please go back to Reset Password page to attempt the process again.', code: 404 });
 
         const foundUser = await User.findById(userId);
         if (!foundUser) {
-            const error: { [key: string]: any } = new Error('User not found  :(');
-            error.statusCode = 404;
-            throw error;
+            throw new GraphQLCustomError('User not found  :(', 404);
         }
 
-        resolverErrorChecker({
+        errorChecker({
             condition: !validator.isStrongPassword(newPassword, {
                 minLength: 6,
                 minSymbols: 0,
@@ -535,10 +528,10 @@ const Mutation = {
             message: 'Password must contain atleast one uppercase letter, a number and should be greater than 5 characters.',
             code: 422
         });
-        resolverErrorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do NOT match', code: 422 });
+        errorChecker({ condition: newPassword !== confirmPassword, message: 'Passwords do NOT match', code: 422 });
 
         const isSamePW = await bcrypt.compare(newPassword, foundUser.password);
-        resolverErrorChecker({ condition: isSamePW, message: 'This password is compromised. Please create another password.', code: 422 });
+        errorChecker({ condition: isSamePW, message: 'This password is compromised. Please create another password.', code: 422 });
 
         const enteredPassword = await bcrypt.hash(newPassword, 12);
         foundUser.password = enteredPassword;
@@ -554,9 +547,17 @@ const Mutation = {
     },
     postFilesUpload: async (parent: any, { uploadPathName, files }: InputArgs, { req }: CtxArgs) => {
 
+        const imageNameArray = [
+            'game', 'guide', 'product',
+            'profile', 'slide', 'notice',
+            'post', 'game-rent', 'game-swap',
+            'game-repair', 'game-download'
+        ];
         const validPaths = new Map([
             ['documents', { name: ['KYC'], mimeTypes: ['application/pdf', 'image/jpeg', 'image/jpg'], dir: paths.documentDir }],
-            ['images', { name: ['game', 'guide', 'product', 'profile', 'slide'], mimeTypes: ['image/jpeg', 'image/jpg', 'image/png'], dir: paths.imageDir }],
+            ['images', {
+                name: imageNameArray, mimeTypes: ['image/jpeg', 'image/jpg', 'image/png'], dir: paths.imageDir
+            }],
             ['misc', { name: ['refund', 'in-app-notice', 'others'], mimeTypes: ['application/pdf', 'image/jpeg', 'image/jpg'], dir: paths.miscDir }]
         ]);
 
@@ -567,11 +568,11 @@ const Mutation = {
         // prodId or KYCId
         const id = uploadPathName.split('/').length > 2 && uploadPathName.split('/')[2];
 
-        resolverErrorChecker({ condition: !validPaths.get(fileKind) || !validPaths.get(fileKind)?.name.includes(folderName), message: 'Error: Invalid "uploadPathName"!' });
+        errorChecker({ condition: !validPaths.get(fileKind) || !validPaths.get(fileKind)!.name.includes(folderName), message: 'Error: Invalid "uploadPathName"!' });
         const pathName = validPaths.get(fileKind)!.dir;
 
         const uploadedFiles = await Promise.all(files.map(async (file) => {
-            resolverErrorChecker({ condition: !validPaths.get(fileKind)!.mimeTypes.includes((await file.promise).mimetype), message: 'Error: Invalid file mimetype!' });
+            errorChecker({ condition: !validPaths.get(fileKind)!.mimeTypes.includes((await file.promise).mimetype), message: 'Error: Invalid file mimetype!' });
             return file.promise
         }));
 
@@ -585,7 +586,7 @@ const Mutation = {
             await s3UploadObject({ id, folderName, filesURLPath, uploadedFiles });
         }
 
-        // for uploads that receive ID in <uploadPathName> query input, we update the respective documents with uploaded file url path
+        // for uploads that receive ID in <uploadPathName> query input, we update the respective documents in DB with uploaded file url path
         switch (folderName) {
             case 'KYC':
                 await Kyc.findOneAndUpdate({ userId: new Types.ObjectId(id as string) }, { validId: filesURLPath[0], utilityBill: filesURLPath[1] });

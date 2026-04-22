@@ -1,6 +1,6 @@
 import mongoose, { Model, Types, Document, HydratedDocument } from "mongoose";
 
-import { calPrice, epochTime, isProductionEnv, resolverErrorChecker } from "../util/helper.js";
+import { calPrice, epochTime, isProductionEnv, errorChecker } from "../util/helper.js";
 import { ICurrency } from "./currency.js";
 import Refund from "./refund.js";
 import User from './user.js';
@@ -100,7 +100,7 @@ orderSchema.statics.getOrders = async function () {
 
 orderSchema.statics.getOrder = async function (orderId: string, currency: ICurrency) {
     let order = await this.findById(orderId).populate('userInfo.userId', 'firstName lastName');
-    resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
+    errorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
     order = order!;
 
     const userData = {
@@ -136,7 +136,7 @@ orderSchema.statics.getOrder = async function (orderId: string, currency: ICurre
 orderSchema.statics.deleteOrder = async function (orderId: string) {
 
     let order = await this.findById(orderId);
-    resolverErrorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
+    errorChecker({ condition: !order, message: 'Order not found :(', code: 404 });
     order = order!;
     order.deleteOne();
     await order.save();
